@@ -10,6 +10,27 @@ fn readLeb(r: Reader, comptime T: type) !T {
     };
 }
 
+fn readu32(r: Reader) !u32 {
+    return readLeb(r, u32);
+}
+
+fn readName(r: Reader) ![]const u8 {
+    const len = try readLeb(r, u32);
+    const str = r.context.buffer[r.context.pos..][0..len];
+    r.context.pos += len;
+    return str;
+}
+
+fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
+    const kind = try r.readByte();
+    const min = try readu32(r);
+    return .{ .min = min, .max = switch (kind) {
+        0x00 => null,
+        0x01 => try readu32(r),
+        else => return error.InvalidFormat,
+    } };
+}
+
 const SectionKind = enum(u8) {
     custom = 0,
     type = 1,
@@ -36,6 +57,13 @@ const ValType = enum(u8) {
     _,
 };
 
+const ImportExportKind = enum(u8) {
+    func,
+    table,
+    mem,
+    global,
+};
+
 pub fn parse(module: []const u8) !void {
     if (module.len < 8) return error.InvalidFormat;
     if (!std.mem.eql(u8, module[0..8], &.{ 0, 'a', 's', 'm', 1, 0, 0, 0 })) return error.InvalidFormat;
@@ -55,6 +83,8 @@ pub fn parse(module: []const u8) !void {
         const end_pos = fbs.pos + len;
         switch (kind) {
             .type => try type_section(r),
+            .import => try import_section(r),
+            .export_ => try export_section(r),
             else => {}, // try r.skipBytes(len, .{})
         }
 
@@ -85,6 +115,48 @@ pub fn type_section(r: Reader) !void {
             dbg("{s}, ", .{@tagName(typ)});
         }
         dbg(")\n", .{});
+    }
+}
+
+pub fn import_section(r: Reader) !void {
+    const len = try readLeb(r, u32);
+    dbg("IMPORTS: {}\n", .{len});
+    for (0..len) |_| {
+        const mod = try readName(r);
+        const name = try readName(r);
+        dbg("{s}:{s} = ", .{ mod, name });
+        const kind: ImportExportKind = @enumFromInt(try r.readByte());
+        switch (kind) {
+            .func => {
+                const idx = try readu32(r);
+                dbg("func {}\n", .{idx});
+            },
+            .table => {
+                const typ: ValType = @enumFromInt(try r.readByte());
+                const limits = try readLimits(r);
+                dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
+            },
+            .mem => {
+                const limits = try readLimits(r);
+                dbg("mem w {}:{?}\n", .{ limits.min, limits.max });
+            },
+            .global => {
+                const typ: ValType = @enumFromInt(try r.readByte());
+                const mut = (try r.readByte()) > 0;
+                dbg("global {} {}\n", .{ typ, mut });
+            },
+        }
+    }
+}
+
+pub fn export_section(r: Reader) !void {
+    const len = try readLeb(r, u32);
+    dbg("EXPORTS: {}\n", .{len});
+    for (0..len) |_| {
+        const name = try readName(r);
+        const kind: ImportExportKind = @enumFromInt(try r.readByte());
+        const idx = try readu32(r);
+        dbg("{s} = {s} {}\n", .{ name, @tagName(kind), idx });
     }
 }
 
