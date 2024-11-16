@@ -83,6 +83,9 @@ pub fn parse(module: []const u8) !void {
         const end_pos = fbs.pos + len;
         switch (kind) {
             .type => try type_section(r),
+            .function => try function_section(r),
+            .memory => try memory_section(r),
+            .global => try global_section(r),
             .import => try import_section(r),
             .export_ => try export_section(r),
             else => {}, // try r.skipBytes(len, .{})
@@ -158,6 +161,33 @@ pub fn export_section(r: Reader) !void {
         const idx = try readu32(r);
         dbg("{s} = {s} {}\n", .{ name, @tagName(kind), idx });
     }
+}
+
+pub fn function_section(r: Reader) !void {
+    const len = try readLeb(r, u32);
+    dbg("FUNCS: {}\n", .{len});
+    for (0..len) |i| {
+        const idx = try readu32(r);
+        if (i < 10) {
+            dbg("func {}\n", .{idx});
+        }
+    }
+    dbg("...\n", .{});
+}
+
+pub fn memory_section(r: Reader) !void {
+    const len = try readLeb(r, u32);
+    dbg("MEMORYS: {}\n", .{len});
+    for (0..len) |_| {
+        const lim = try readLimits(r);
+        dbg("mem {}:{?}\n", .{ lim.min, lim.max });
+    }
+}
+
+pub fn global_section(r: Reader) !void {
+    const len = try readLeb(r, u32);
+    dbg("GLOBALS: {}\n", .{len});
+    dbg("tbd...\n", .{});
 }
 
 test "basic functionality" {
