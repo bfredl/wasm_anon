@@ -10,12 +10,12 @@ fn readLeb(r: Reader, comptime T: type) !T {
     };
 }
 
-fn readu32(r: Reader) !u32 {
+fn readu(r: Reader) !u32 {
     return readLeb(r, u32);
 }
 
 fn readName(r: Reader) ![]const u8 {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     const str = r.context.buffer[r.context.pos..][0..len];
     r.context.pos += len;
     return str;
@@ -23,10 +23,10 @@ fn readName(r: Reader) ![]const u8 {
 
 fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
     const kind = try r.readByte();
-    const min = try readu32(r);
+    const min = try readu(r);
     return .{ .min = min, .max = switch (kind) {
         0x00 => null,
-        0x01 => try readu32(r),
+        0x01 => try readu(r),
         else => return error.InvalidFormat,
     } };
 }
@@ -78,7 +78,7 @@ pub fn parse(module: []const u8) !void {
         };
         const kind: SectionKind = @enumFromInt(id);
 
-        const len = try readLeb(r, u32);
+        const len = try readu(r);
         dbg("SECTION: {s} ({}) with len {}\n", .{ @tagName(kind), id, len });
         const end_pos = fbs.pos + len;
         switch (kind) {
@@ -88,6 +88,7 @@ pub fn parse(module: []const u8) !void {
             .global => try global_section(r),
             .import => try import_section(r),
             .export_ => try export_section(r),
+            .code => try code_section(r),
             else => {}, // try r.skipBytes(len, .{})
         }
 
@@ -100,19 +101,19 @@ pub fn parse(module: []const u8) !void {
 }
 
 pub fn type_section(r: Reader) !void {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     dbg("TYPES: {}\n", .{len});
     for (0..len) |_| {
         const tag = try r.readByte();
         if (tag != 0x60) return error.InvalidFormat;
-        const n_params = try readLeb(r, u32);
+        const n_params = try readu(r);
         dbg("(", .{});
         for (0..n_params) |_| {
             const typ: ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
         }
         dbg("): (", .{});
-        const n_ret = try readLeb(r, u32);
+        const n_ret = try readu(r);
         for (0..n_ret) |_| {
             const typ: ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
@@ -122,7 +123,7 @@ pub fn type_section(r: Reader) !void {
 }
 
 pub fn import_section(r: Reader) !void {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     dbg("IMPORTS: {}\n", .{len});
     for (0..len) |_| {
         const mod = try readName(r);
@@ -131,7 +132,7 @@ pub fn import_section(r: Reader) !void {
         const kind: ImportExportKind = @enumFromInt(try r.readByte());
         switch (kind) {
             .func => {
-                const idx = try readu32(r);
+                const idx = try readu(r);
                 dbg("func {}\n", .{idx});
             },
             .table => {
@@ -153,21 +154,21 @@ pub fn import_section(r: Reader) !void {
 }
 
 pub fn export_section(r: Reader) !void {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     dbg("EXPORTS: {}\n", .{len});
     for (0..len) |_| {
         const name = try readName(r);
         const kind: ImportExportKind = @enumFromInt(try r.readByte());
-        const idx = try readu32(r);
+        const idx = try readu(r);
         dbg("{s} = {s} {}\n", .{ name, @tagName(kind), idx });
     }
 }
 
 pub fn function_section(r: Reader) !void {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
-        const idx = try readu32(r);
+        const idx = try readu(r);
         if (i < 10) {
             dbg("func {}\n", .{idx});
         }
@@ -176,7 +177,7 @@ pub fn function_section(r: Reader) !void {
 }
 
 pub fn memory_section(r: Reader) !void {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     dbg("MEMORYS: {}\n", .{len});
     for (0..len) |_| {
         const lim = try readLimits(r);
@@ -185,9 +186,19 @@ pub fn memory_section(r: Reader) !void {
 }
 
 pub fn global_section(r: Reader) !void {
-    const len = try readLeb(r, u32);
+    const len = try readu(r);
     dbg("GLOBALS: {}\n", .{len});
     dbg("tbd...\n", .{});
+}
+
+pub fn code_section(r: Reader) !void {
+    const len = try readu(r);
+    dbg("Codes: {}\n", .{len});
+    for (0..len) |_| {
+        const size = try readu(r);
+        dbg("CODE with size {}\n", .{size});
+        r.context.pos += size;
+    }
 }
 
 test "basic functionality" {
