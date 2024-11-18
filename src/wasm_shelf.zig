@@ -52,10 +52,11 @@ const SectionKind = enum(u8) {
 };
 
 const ValType = enum(u8) {
-    int32 = 0x7F,
-    int64 = 0x7E,
-    float32 = 0x7D,
-    float64 = 0x7C,
+    void = 0x40,
+    i32 = 0x7F,
+    i64 = 0x7E,
+    f32 = 0x7D,
+    f64 = 0x7C,
     vec128 = 0x7B,
     _,
 };
@@ -209,11 +210,48 @@ pub fn code_section(r: Reader) !void {
             dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
         }
         dbg("\n", .{});
-
-        const inst: OpCode = @enumFromInt(try r.readByte());
-        dbg("block: {s}\n", .{@tagName(inst)});
+        try expr(r);
 
         r.context.pos = endpos;
+        dbg("\n", .{});
+    }
+}
+
+pub fn peekByte(r: Reader) u8 {
+    return r.context.buffer[r.context.pos];
+}
+
+pub fn blocktype(r: Reader) !void {
+    // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
+    const nextByte = peekByte(r);
+    if ((nextByte & 0xc0) == 0x40) {
+        const t: ValType = @enumFromInt(try r.readByte());
+        dbg(" typ={s}", .{@tagName(t)});
+    } else {
+        const tidx: u32 = @intCast(try readLeb(r, i33));
+        dbg(" typid={}", .{tidx});
+    }
+}
+
+pub fn expr(r: Reader) !void {
+    var level: u32 = 1;
+
+    while (level >= 1) {
+        const inst: OpCode = @enumFromInt(try r.readByte());
+        dbg("{s}", .{@tagName(inst)});
+        switch (inst) {
+            .block => {
+                level += 1;
+                try blocktype(r);
+            },
+            .end => {
+                level -= 1;
+            },
+            else => {
+                dbg(" TBD, aborting!\n", .{});
+                return;
+            },
+        }
         dbg("\n", .{});
     }
 }
