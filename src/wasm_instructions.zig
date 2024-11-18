@@ -1,4 +1,4 @@
-const Opcode = enum(u8) {
+pub const OpCode = enum(u8) {
     unreachable_ = 0x00,
     nop = 0x01,
     block = 0x02,

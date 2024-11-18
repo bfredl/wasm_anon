@@ -3,6 +3,9 @@ const testing = std.testing;
 const dbg = std.debug.print;
 const Reader = std.io.FixedBufferStream([]const u8).Reader;
 
+const instructions = @import("./wasm_instructions.zig");
+const OpCode = instructions.OpCode;
+
 fn readLeb(r: Reader, comptime T: type) !T {
     return switch (@typeInfo(T).int.signedness) {
         .signed => std.leb.readILEB128(T, r),
@@ -197,7 +200,21 @@ pub fn code_section(r: Reader) !void {
     for (0..len) |_| {
         const size = try readu(r);
         dbg("CODE with size {}\n", .{size});
-        r.context.pos += size;
+        const endpos = r.context.pos + size;
+
+        const n_locals = try readu(r);
+        for (0..n_locals) |_| {
+            const n_decl = try readu(r);
+            const typ: ValType = @enumFromInt(try r.readByte());
+            dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
+        }
+        dbg("\n", .{});
+
+        const inst: OpCode = @enumFromInt(try r.readByte());
+        dbg("block: {s}\n", .{@tagName(inst)});
+
+        r.context.pos = endpos;
+        dbg("\n", .{});
     }
 }
 
