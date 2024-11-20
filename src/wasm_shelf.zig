@@ -238,6 +238,8 @@ pub fn expr(r: Reader) !void {
 
     while (level >= 1) {
         const inst: OpCode = @enumFromInt(try r.readByte());
+
+        for (0..(level - 1)) |_| dbg("  ", .{});
         dbg("{s}", .{@tagName(inst)});
         switch (inst) {
             .block => {
@@ -246,6 +248,14 @@ pub fn expr(r: Reader) !void {
             },
             .end => {
                 level -= 1;
+            },
+            .i32_const => {
+                const val = try readLeb(r, i32);
+                dbg(" {}", .{val});
+            },
+            .local_get, .local_set, .local_tee => {
+                const idx = try readu(r);
+                dbg(" {}", .{idx});
             },
             else => {
                 dbg(" TBD, aborting!\n", .{});
