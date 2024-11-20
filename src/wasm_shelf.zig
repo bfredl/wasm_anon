@@ -258,8 +258,11 @@ pub fn expr(r: Reader) !void {
                 dbg(" {}", .{idx});
             },
             else => {
-                dbg(" TBD, aborting!\n", .{});
-                return;
+                const idx = @intFromEnum(inst);
+                if (!(idx >= 0x45 and idx <= 0xc4)) {
+                    dbg(" TBD, aborting!\n", .{});
+                    return;
+                }
             },
         }
         dbg("\n", .{});
