@@ -238,16 +238,22 @@ pub fn expr(r: Reader) !void {
 
     while (level >= 1) {
         const inst: OpCode = @enumFromInt(try r.readByte());
+        if (inst == .end or inst == .else_) level -= 1;
 
-        for (0..(level - 1)) |_| dbg("  ", .{});
+        for (0..level) |_| dbg("  ", .{});
         dbg("{s}", .{@tagName(inst)});
         switch (inst) {
-            .block => {
+            .block, .loop, .if_ => {
                 level += 1;
                 try blocktype(r);
             },
-            .end => {
-                level -= 1;
+            .end, .ret => {},
+            .else_ => {
+                level += 1;
+            },
+            .br, .br_if => {
+                const idx = try readu(r);
+                dbg(" {}", .{idx});
             },
             .i32_const => {
                 const val = try readLeb(r, i32);
@@ -257,6 +263,7 @@ pub fn expr(r: Reader) !void {
                 const idx = try readu(r);
                 dbg(" {}", .{idx});
             },
+            .drop, .select => {},
             else => {
                 const idx = @intFromEnum(inst);
                 if (!(idx >= 0x45 and idx <= 0xc4)) {
