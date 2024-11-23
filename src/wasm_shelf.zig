@@ -5,6 +5,7 @@ const Reader = std.io.FixedBufferStream([]const u8).Reader;
 
 const instructions = @import("./wasm_instructions.zig");
 const OpCode = instructions.OpCode;
+const Prefixed = instructions.Prefixed;
 
 fn readLeb(r: Reader, comptime T: type) !T {
     return switch (@typeInfo(T).int.signedness) {
@@ -264,9 +265,32 @@ pub fn expr(r: Reader) !void {
                 dbg(" {}", .{idx});
             },
             .drop, .select => {},
+            .prefixed => {
+                const code: Prefixed = @enumFromInt(try readu(r));
+                dbg(":{s}", .{@tagName(code)});
+                switch (code) {
+                    .memory_fill => {
+                        if (try r.readByte() != 0) return error.InvalidFormat;
+                    },
+                    .memory_copy => {
+                        if (try r.readByte() != 0) return error.InvalidFormat;
+                        if (try r.readByte() != 0) return error.InvalidFormat;
+                    },
+                    else => {
+                        dbg(" UNKNOWN: {}, aborting!", .{@intFromEnum(code)});
+                        return;
+                    },
+                }
+            },
             else => {
                 const idx = @intFromEnum(inst);
-                if (!(idx >= 0x45 and idx <= 0xc4)) {
+                if (idx >= 0x45 and idx <= 0xc4) {
+                    // ok, parameterless
+                } else if (idx >= 0x28 and idx <= 0x3e) {
+                    const alignas = try readu(r);
+                    const offset = try readu(r);
+                    dbg(" a={} o={}", .{ alignas, offset });
+                } else {
                     dbg(" TBD, aborting!\n", .{});
                     return;
                 }

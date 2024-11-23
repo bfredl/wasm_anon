@@ -197,3 +197,27 @@ pub const OpCode = enum(u8) {
 
     prefixed = 0xFC,
 };
+
+pub const Prefixed = enum(u32) {
+    i32_trunc_sat_f32_s = 0,
+    i32_trunc_sat_f32_u = 1,
+    i32_trunc_sat_f64_s = 2,
+    i32_trunc_sat_f64_u = 3,
+    i64_trunc_sat_f32_s = 4,
+    i64_trunc_sat_f32_u = 5,
+    i64_trunc_sat_f64_s = 6,
+    i64_trunc_sat_f64_u = 7,
+
+    memory_init = 8,
+    data_drop = 9,
+    memory_copy = 10,
+    memory_fill = 11,
+
+    table_init = 12,
+    elem_drop = 13,
+    table_copy = 14,
+    table_grow = 15,
+    table_size = 16,
+    table_fill = 17,
+    _,
+};
