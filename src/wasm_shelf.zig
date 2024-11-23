@@ -59,6 +59,8 @@ const ValType = enum(u8) {
     f32 = 0x7D,
     f64 = 0x7C,
     vec128 = 0x7B,
+    funcref = 0x70,
+    externref = 0x6f,
     _,
 };
 
@@ -94,6 +96,7 @@ pub fn parse(module: []const u8) !void {
             .import => try import_section(r),
             .export_ => try export_section(r),
             .code => try code_section(r),
+            .table => try table_section(r),
             else => {}, // try r.skipBytes(len, .{})
         }
 
@@ -194,6 +197,16 @@ pub fn global_section(r: Reader) !void {
     const len = try readu(r);
     dbg("GLOBALS: {}\n", .{len});
     dbg("tbd...\n", .{});
+}
+
+pub fn table_section(r: Reader) !void {
+    const len = try readu(r);
+    dbg("Tables: {}\n", .{len});
+    for (0..len) |_| {
+        const typ: ValType = @enumFromInt(try r.readByte());
+        const limits = try readLimits(r);
+        dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
+    }
 }
 
 pub fn code_section(r: Reader) !void {
