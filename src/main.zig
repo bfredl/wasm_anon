@@ -30,5 +30,5 @@ pub fn main() !void {
     const buf = try readall(allocator, filearg);
     defer allocator.free(buf);
 
-    try wasm_shelf.parse(buf);
+    _ = try wasm_shelf.Module.parse(buf);
 }
