@@ -3,9 +3,7 @@ const testing = std.testing;
 const dbg = std.debug.print;
 const Reader = std.io.FixedBufferStream([]const u8).Reader;
 
-const instructions = @import("./wasm_instructions.zig");
-const OpCode = instructions.OpCode;
-const Prefixed = instructions.Prefixed;
+const defs = @import("./defs.zig");
 
 fn readLeb(r: Reader, comptime T: type) !T {
     return switch (@typeInfo(T).int.signedness) {
@@ -35,42 +33,6 @@ fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
     } };
 }
 
-const SectionKind = enum(u8) {
-    custom = 0,
-    type = 1,
-    import = 2,
-    function = 3,
-    table = 4,
-    memory = 5,
-    global = 6,
-    export_ = 7,
-    start = 8,
-    element = 9,
-    code = 10,
-    data = 11,
-    data_count = 12,
-    _,
-};
-
-const ValType = enum(u8) {
-    void = 0x40,
-    i32 = 0x7F,
-    i64 = 0x7E,
-    f32 = 0x7D,
-    f64 = 0x7C,
-    vec128 = 0x7B,
-    funcref = 0x70,
-    externref = 0x6f,
-    _,
-};
-
-const ImportExportKind = enum(u8) {
-    func,
-    table,
-    mem,
-    global,
-};
-
 pub fn parse(module: []const u8) !void {
     if (module.len < 8) return error.InvalidFormat;
     if (!std.mem.eql(u8, module[0..8], &.{ 0, 'a', 's', 'm', 1, 0, 0, 0 })) return error.InvalidFormat;
@@ -83,7 +45,7 @@ pub fn parse(module: []const u8) !void {
             error.EndOfStream => break,
             else => |e| return e,
         };
-        const kind: SectionKind = @enumFromInt(id);
+        const kind: defs.SectionKind = @enumFromInt(id);
 
         const len = try readu(r);
         dbg("SECTION: {s} ({}) with len {}\n", .{ @tagName(kind), id, len });
@@ -117,13 +79,13 @@ pub fn type_section(r: Reader) !void {
         const n_params = try readu(r);
         dbg("(", .{});
         for (0..n_params) |_| {
-            const typ: ValType = @enumFromInt(try r.readByte());
+            const typ: defs.ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
         }
         dbg("): (", .{});
         const n_ret = try readu(r);
         for (0..n_ret) |_| {
-            const typ: ValType = @enumFromInt(try r.readByte());
+            const typ: defs.ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
         }
         dbg(")\n", .{});
@@ -137,14 +99,14 @@ pub fn import_section(r: Reader) !void {
         const mod = try readName(r);
         const name = try readName(r);
         dbg("{s}:{s} = ", .{ mod, name });
-        const kind: ImportExportKind = @enumFromInt(try r.readByte());
+        const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         switch (kind) {
             .func => {
                 const idx = try readu(r);
                 dbg("func {}\n", .{idx});
             },
             .table => {
-                const typ: ValType = @enumFromInt(try r.readByte());
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
                 const limits = try readLimits(r);
                 dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
             },
@@ -153,7 +115,7 @@ pub fn import_section(r: Reader) !void {
                 dbg("mem w {}:{?}\n", .{ limits.min, limits.max });
             },
             .global => {
-                const typ: ValType = @enumFromInt(try r.readByte());
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
                 const mut = (try r.readByte()) > 0;
                 dbg("global {} {}\n", .{ typ, mut });
             },
@@ -166,7 +128,7 @@ pub fn export_section(r: Reader) !void {
     dbg("EXPORTS: {}\n", .{len});
     for (0..len) |_| {
         const name = try readName(r);
-        const kind: ImportExportKind = @enumFromInt(try r.readByte());
+        const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         const idx = try readu(r);
         dbg("{s} = {s} {}\n", .{ name, @tagName(kind), idx });
     }
@@ -203,7 +165,7 @@ pub fn table_section(r: Reader) !void {
     const len = try readu(r);
     dbg("Tables: {}\n", .{len});
     for (0..len) |_| {
-        const typ: ValType = @enumFromInt(try r.readByte());
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
         const limits = try readLimits(r);
         dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
     }
@@ -220,7 +182,7 @@ pub fn code_section(r: Reader) !void {
         const n_locals = try readu(r);
         for (0..n_locals) |_| {
             const n_decl = try readu(r);
-            const typ: ValType = @enumFromInt(try r.readByte());
+            const typ: defs.ValType = @enumFromInt(try r.readByte());
             dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
         }
         dbg("\n", .{});
@@ -239,7 +201,7 @@ pub fn blocktype(r: Reader) !void {
     // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
     const nextByte = peekByte(r);
     if ((nextByte & 0xc0) == 0x40) {
-        const t: ValType = @enumFromInt(try r.readByte());
+        const t: defs.ValType = @enumFromInt(try r.readByte());
         dbg(" typ={s}", .{@tagName(t)});
     } else {
         const tidx: u32 = @intCast(try readLeb(r, i33));
@@ -251,7 +213,7 @@ pub fn expr(r: Reader) !void {
     var level: u32 = 1;
 
     while (level >= 1) {
-        const inst: OpCode = @enumFromInt(try r.readByte());
+        const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
 
         for (0..level) |_| dbg("  ", .{});
@@ -279,7 +241,7 @@ pub fn expr(r: Reader) !void {
             },
             .drop, .select => {},
             .prefixed => {
-                const code: Prefixed = @enumFromInt(try readu(r));
+                const code: defs.Prefixed = @enumFromInt(try readu(r));
                 dbg(":{s}", .{@tagName(code)});
                 switch (code) {
                     .memory_fill => {

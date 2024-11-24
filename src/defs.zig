@@ -1,3 +1,39 @@
+pub const SectionKind = enum(u8) {
+    custom = 0,
+    type = 1,
+    import = 2,
+    function = 3,
+    table = 4,
+    memory = 5,
+    global = 6,
+    export_ = 7,
+    start = 8,
+    element = 9,
+    code = 10,
+    data = 11,
+    data_count = 12,
+    _,
+};
+
+pub const ImportExportKind = enum(u8) {
+    func = 0,
+    table = 1,
+    mem = 2,
+    global = 3,
+};
+
+pub const ValType = enum(u8) {
+    void = 0x40,
+    i32 = 0x7F,
+    i64 = 0x7E,
+    f32 = 0x7D,
+    f64 = 0x7C,
+    vec128 = 0x7B,
+    funcref = 0x70,
+    externref = 0x6f,
+    _,
+};
+
 pub const OpCode = enum(u8) {
     unreachable_ = 0x00,
     nop = 0x01,
