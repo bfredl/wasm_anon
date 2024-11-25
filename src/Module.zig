@@ -34,11 +34,20 @@ fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
     } };
 }
 
+allocator: std.mem.Allocator,
 raw: []const u8,
+funcs: []FuncDef = undefined,
 
-pub fn parse(module: []const u8) !Module {
+const FuncDef = struct {
+    typeidx: u32,
+    codeoff: u32,
+};
+
+pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
     if (module.len < 8) return error.InvalidFormat;
     if (!std.mem.eql(u8, module[0..8], &.{ 0, 'a', 's', 'm', 1, 0, 0, 0 })) return error.InvalidFormat;
+
+    var self: Module = .{ .raw = module, .allocator = allocator };
 
     var fbs = std.io.FixedBufferStream([]const u8){ .pos = 8, .buffer = module };
     const r = fbs.reader();
@@ -55,12 +64,12 @@ pub fn parse(module: []const u8) !Module {
         const end_pos = fbs.pos + len;
         switch (kind) {
             .type => try type_section(r),
-            .function => try function_section(r),
+            .function => try self.function_section(r),
             .memory => try memory_section(r),
             .global => try global_section(r),
             .import => try import_section(r),
             .export_ => try export_section(r),
-            .code => try code_section(r),
+            .code => try self.code_section(r),
             .table => try table_section(r),
             else => {}, // try r.skipBytes(len, .{})
         }
@@ -72,7 +81,11 @@ pub fn parse(module: []const u8) !Module {
         fbs.pos = end_pos;
     }
 
-    return .{ .raw = module };
+    return self;
+}
+
+pub fn deinit(self: *Module) void {
+    self.allocator.free(self.funcs);
 }
 
 pub fn type_section(r: Reader) !void {
@@ -139,14 +152,13 @@ pub fn export_section(r: Reader) !void {
     }
 }
 
-pub fn function_section(r: Reader) !void {
+pub fn function_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
+    self.funcs = try self.allocator.alloc(FuncDef, len);
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
         const idx = try readu(r);
-        if (i < 10) {
-            dbg("func {}\n", .{idx});
-        }
+        self.funcs[i].typeidx = idx;
     }
     dbg("...\n", .{});
 }
@@ -176,13 +188,15 @@ pub fn table_section(r: Reader) !void {
     }
 }
 
-pub fn code_section(r: Reader) !void {
+pub fn code_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("Codes: {}\n", .{len});
-    for (0..len) |_| {
+    for (0..len) |i| {
         const size = try readu(r);
         dbg("CODE with size {}\n", .{size});
         const endpos = r.context.pos + size;
+
+        self.funcs[i].codeoff = @intCast(r.context.pos);
 
         const n_locals = try readu(r);
         for (0..n_locals) |_| {
