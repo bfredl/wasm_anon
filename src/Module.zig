@@ -38,10 +38,16 @@ allocator: std.mem.Allocator,
 raw: []const u8,
 funcs: []FuncDef = undefined,
 
+export_off: u32 = 0,
+
 const FuncDef = struct {
     typeidx: u32,
     codeoff: u32,
 };
+
+pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream {
+    return .{ .buffer = self.raw, .pos = off };
+}
 
 pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
     if (module.len < 8) return error.InvalidFormat;
@@ -68,7 +74,10 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .memory => try memory_section(r),
             .global => try global_section(r),
             .import => try import_section(r),
-            .export_ => try export_section(r),
+            .export_ => {
+                self.export_off = fbs.pos;
+                try export_section_dbg(r);
+            },
             .code => try self.code_section(r),
             .table => try table_section(r),
             else => {}, // try r.skipBytes(len, .{})
@@ -141,7 +150,7 @@ pub fn import_section(r: Reader) !void {
     }
 }
 
-pub fn export_section(r: Reader) !void {
+fn export_section_dbg(r: Reader) !void {
     const len = try readu(r);
     dbg("EXPORTS: {}\n", .{len});
     for (0..len) |_| {
@@ -152,7 +161,20 @@ pub fn export_section(r: Reader) !void {
     }
 }
 
-pub fn function_section(self: *Module, r: Reader) !void {
+pub const Export = struct {
+    kind: defs.ImportExportKind,
+    idx: u32
+};
+
+pub fn lookup_export(self: *Module, name: []const u8) ?Export {
+    if (self.export_off == 0) return null;
+    const fbs = self.fbs_at(self.export_off);
+    const r = fbs.reader();
+
+    const len = try readu(r);
+}
+
+fn function_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     self.funcs = try self.allocator.alloc(FuncDef, len);
     dbg("FUNCS: {}\n", .{len});
