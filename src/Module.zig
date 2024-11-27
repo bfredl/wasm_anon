@@ -45,7 +45,7 @@ const FuncDef = struct {
     codeoff: u32,
 };
 
-pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream {
+pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream([]const u8) {
     return .{ .buffer = self.raw, .pos = off };
 }
 
@@ -75,7 +75,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .global => try global_section(r),
             .import => try import_section(r),
             .export_ => {
-                self.export_off = fbs.pos;
+                self.export_off = @intCast(fbs.pos);
                 try export_section_dbg(r);
             },
             .code => try self.code_section(r),
@@ -161,17 +161,23 @@ fn export_section_dbg(r: Reader) !void {
     }
 }
 
-pub const Export = struct {
-    kind: defs.ImportExportKind,
-    idx: u32
-};
+pub const Export = struct { kind: defs.ImportExportKind, idx: u32 };
 
-pub fn lookup_export(self: *Module, name: []const u8) ?Export {
+pub fn lookup_export(self: *Module, name: []const u8) !?Export {
     if (self.export_off == 0) return null;
-    const fbs = self.fbs_at(self.export_off);
+    var fbs = self.fbs_at(self.export_off);
     const r = fbs.reader();
 
     const len = try readu(r);
+    for (0..len) |_| {
+        const item_name = try readName(r);
+        const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
+        const idx = try readu(r);
+        if (std.mem.eql(u8, name, item_name)) {
+            return .{ .kind = kind, .idx = idx };
+        }
+    }
+    return null;
 }
 
 fn function_section(self: *Module, r: Reader) !void {

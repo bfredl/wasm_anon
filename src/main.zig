@@ -32,4 +32,10 @@ pub fn main() !void {
 
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
+
+    if (try mod.lookup_export("_start")) |sym| {
+        dbg("SYM: {}\n", .{sym});
+    } else {
+        dbg("not found :pensive:\n", .{});
+    }
 }
