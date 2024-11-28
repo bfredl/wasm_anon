@@ -57,6 +57,10 @@ pub fn expr(r: Reader) !void {
                 const val = try readLeb(r, i32);
                 dbg(" {}", .{val});
             },
+            .i64_const => {
+                const val = try readLeb(r, i64);
+                dbg(" {}", .{val});
+            },
             .local_get, .local_set, .local_tee => {
                 const idx = try readu(r);
                 dbg(" {}", .{idx});
