@@ -1,28 +1,14 @@
 const std = @import("std");
 const testing = std.testing;
 const dbg = std.debug.print;
-const Reader = std.io.FixedBufferStream([]const u8).Reader;
 
 const defs = @import("./defs.zig");
 const Module = @This();
 
-fn readLeb(r: Reader, comptime T: type) !T {
-    return switch (@typeInfo(T).int.signedness) {
-        .signed => std.leb.readILEB128(T, r),
-        .unsigned => std.leb.readULEB128(T, r),
-    };
-}
-
-fn readu(r: Reader) !u32 {
-    return readLeb(r, u32);
-}
-
-fn readName(r: Reader) ![]const u8 {
-    const len = try readu(r);
-    const str = r.context.buffer[r.context.pos..][0..len];
-    r.context.pos += len;
-    return str;
-}
+const read = @import("./read.zig");
+const readu = read.readu;
+const readName = read.readName;
+const Reader = read.Reader;
 
 fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
     const kind = try r.readByte();
@@ -36,14 +22,12 @@ fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
 
 allocator: std.mem.Allocator,
 raw: []const u8,
-funcs: []FuncDef = undefined,
+// TODO: {.ptr = undefined, .size = 0} would be a useful idiom..
+funcs: []Function = undefined,
 
 export_off: u32 = 0,
 
-const FuncDef = struct {
-    typeidx: u32,
-    codeoff: u32,
-};
+const Function = @import("./Function.zig");
 
 pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream([]const u8) {
     return .{ .buffer = self.raw, .pos = off };
@@ -182,7 +166,7 @@ pub fn lookup_export(self: *Module, name: []const u8) !?Export {
 
 fn function_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
-    self.funcs = try self.allocator.alloc(FuncDef, len);
+    self.funcs = try self.allocator.alloc(Function, len);
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
         const idx = try readu(r);
@@ -224,100 +208,9 @@ pub fn code_section(self: *Module, r: Reader) !void {
         dbg("CODE with size {}\n", .{size});
         const endpos = r.context.pos + size;
 
-        self.funcs[i].codeoff = @intCast(r.context.pos);
-
-        const n_locals = try readu(r);
-        for (0..n_locals) |_| {
-            const n_decl = try readu(r);
-            const typ: defs.ValType = @enumFromInt(try r.readByte());
-            dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
-        }
-        dbg("\n", .{});
-        try expr(r);
+        try self.funcs[i].parse(r);
 
         r.context.pos = endpos;
-        dbg("\n", .{});
-    }
-}
-
-pub fn peekByte(r: Reader) u8 {
-    return r.context.buffer[r.context.pos];
-}
-
-pub fn blocktype(r: Reader) !void {
-    // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
-    const nextByte = peekByte(r);
-    if ((nextByte & 0xc0) == 0x40) {
-        const t: defs.ValType = @enumFromInt(try r.readByte());
-        dbg(" typ={s}", .{@tagName(t)});
-    } else {
-        const tidx: u32 = @intCast(try readLeb(r, i33));
-        dbg(" typid={}", .{tidx});
-    }
-}
-
-pub fn expr(r: Reader) !void {
-    var level: u32 = 1;
-
-    while (level >= 1) {
-        const inst: defs.OpCode = @enumFromInt(try r.readByte());
-        if (inst == .end or inst == .else_) level -= 1;
-
-        for (0..level) |_| dbg("  ", .{});
-        dbg("{s}", .{@tagName(inst)});
-        switch (inst) {
-            .block, .loop, .if_ => {
-                level += 1;
-                try blocktype(r);
-            },
-            .end, .ret => {},
-            .else_ => {
-                level += 1;
-            },
-            .br, .br_if => {
-                const idx = try readu(r);
-                dbg(" {}", .{idx});
-            },
-            .i32_const => {
-                const val = try readLeb(r, i32);
-                dbg(" {}", .{val});
-            },
-            .local_get, .local_set, .local_tee => {
-                const idx = try readu(r);
-                dbg(" {}", .{idx});
-            },
-            .drop, .select => {},
-            .prefixed => {
-                const code: defs.Prefixed = @enumFromInt(try readu(r));
-                dbg(":{s}", .{@tagName(code)});
-                switch (code) {
-                    .memory_fill => {
-                        if (try r.readByte() != 0) return error.InvalidFormat;
-                    },
-                    .memory_copy => {
-                        if (try r.readByte() != 0) return error.InvalidFormat;
-                        if (try r.readByte() != 0) return error.InvalidFormat;
-                    },
-                    else => {
-                        dbg(" UNKNOWN: {}, aborting!", .{@intFromEnum(code)});
-                        return;
-                    },
-                }
-            },
-            else => {
-                const idx = @intFromEnum(inst);
-                if (idx >= 0x45 and idx <= 0xc4) {
-                    // ok, parameterless
-                } else if (idx >= 0x28 and idx <= 0x3e) {
-                    const alignas = try readu(r);
-                    const offset = try readu(r);
-                    dbg(" a={} o={}", .{ alignas, offset });
-                } else {
-                    dbg(" TBD, aborting!\n", .{});
-                    return;
-                }
-            },
-        }
         dbg("\n", .{});
     }
 }
