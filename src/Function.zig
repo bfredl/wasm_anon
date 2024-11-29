@@ -18,7 +18,7 @@ const ControlItem = struct {
     jmp_t: u16,
 };
 
-pub fn parse(self: *Function, r: Reader) !void {
+pub fn parse(self: *Function, r: Reader, allocator: std.heap.Allocator) !void {
     self.codeoff = @intCast(r.context.pos);
 
     const n_locals = try readu(r);
@@ -28,13 +28,17 @@ pub fn parse(self: *Function, r: Reader) !void {
         dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
     dbg("\n", .{});
-    try expr(r);
-}
 
-pub fn expr(r: Reader) !void {
     var level: u32 = 1;
 
+    const clist: std.ArrayList(ControlItem) = .init(allocator);
+    // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
+    const cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(allocator);
+    // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
+    try clist.append(.{ .off = 0, .jmp_t = 0 });
+
     while (level >= 1) {
+        const pos = r.context.pos;
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
 
@@ -44,10 +48,17 @@ pub fn expr(r: Reader) !void {
             .block, .loop, .if_ => {
                 level += 1;
                 try read.blocktype(r);
+                try clist.append(.{ .off = pos, .jmp_t = 0 });
+                try cstack.append(clist.items.len - 1);
             },
-            .end, .ret => {},
+            .end => {
+                cstack.items.len -= 1;
+            },
+            .ret => {},
             .else_ => {
                 level += 1;
+                try clist.append(.{ .off = pos, .jmp_t = 0 });
+                clist.items[cstack.items[cstack.items.len - 1]].else_ = clist.items.len - 1;
             },
             .br, .br_if => {
                 const idx = try readu(r);
