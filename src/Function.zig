@@ -18,7 +18,7 @@ const ControlItem = struct {
     jmp_t: u16,
 };
 
-pub fn parse(self: *Function, r: Reader, allocator: std.heap.Allocator) !void {
+pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
     self.codeoff = @intCast(r.context.pos);
 
     const n_locals = try readu(r);
@@ -31,17 +31,19 @@ pub fn parse(self: *Function, r: Reader, allocator: std.heap.Allocator) !void {
 
     var level: u32 = 1;
 
-    const clist: std.ArrayList(ControlItem) = .init(allocator);
+    var clist: std.ArrayList(ControlItem) = .init(allocator);
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
-    const cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(allocator);
+    var cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(allocator);
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
     try clist.append(.{ .off = 0, .jmp_t = 0 });
+    try cstack.append(.{ .start = 0 });
 
     while (level >= 1) {
-        const pos = r.context.pos;
+        const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
 
+        dbg("{x:04}:", .{pos});
         for (0..level) |_| dbg("  ", .{});
         dbg("{s}", .{@tagName(inst)});
         switch (inst) {
@@ -49,18 +51,20 @@ pub fn parse(self: *Function, r: Reader, allocator: std.heap.Allocator) !void {
                 level += 1;
                 try read.blocktype(r);
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
-                try cstack.append(clist.items.len - 1);
+                try cstack.append(.{ .start = @intCast(clist.items.len - 1) });
             },
             .end => {
+                try clist.append(.{ .off = pos, .jmp_t = 0 });
                 cstack.items.len -= 1;
             },
             .ret => {},
             .else_ => {
                 level += 1;
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
-                clist.items[cstack.items[cstack.items.len - 1]].else_ = clist.items.len - 1;
+                cstack.items[cstack.items.len - 1].else_ = @intCast(clist.items.len - 1);
             },
             .br, .br_if => {
+                try clist.append(.{ .off = pos, .jmp_t = 0 });
                 const idx = try readu(r);
                 dbg(" {}", .{idx});
             },
@@ -110,4 +114,11 @@ pub fn parse(self: *Function, r: Reader, allocator: std.heap.Allocator) !void {
         }
         dbg("\n", .{});
     }
+
+    dbg("\n\n", .{});
+    for (0.., clist.items) |i, c| {
+        dbg("{:2}: {x:04} {}\n", .{ i, c.off, c.jmp_t });
+    }
+
+    self.control = try clist.toOwnedSlice();
 }

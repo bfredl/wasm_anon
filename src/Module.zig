@@ -208,7 +208,7 @@ pub fn code_section(self: *Module, r: Reader) !void {
         dbg("CODE with size {}\n", .{size});
         const endpos = r.context.pos + size;
 
-        try self.funcs[i].parse(r);
+        try self.funcs[i].parse(r, self.allocator);
 
         r.context.pos = endpos;
         dbg("\n", .{});
