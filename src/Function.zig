@@ -35,7 +35,7 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
     var cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(allocator);
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
-    try clist.append(.{ .off = 0, .jmp_t = 0 });
+    try clist.append(.{ .off = @intCast(r.context.pos), .jmp_t = 0 });
     try cstack.append(.{ .start = 0 });
 
     while (level >= 1) {
@@ -55,6 +55,10 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
             },
             .end => {
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
+                const start = cstack.items[cstack.items.len - 1].start;
+                const off = clist.items[start].off;
+                const start_op: defs.OpCode = @enumFromInt(r.context.buffer[off]);
+                dbg(" (for {s} at {x:04})", .{ @tagName(start_op), off });
                 cstack.items.len -= 1;
             },
             .ret => {},
