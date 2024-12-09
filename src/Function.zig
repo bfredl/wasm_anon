@@ -154,7 +154,9 @@ pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
     if (n_locals > 10) return error.NotImplemented;
 
     var value_stack: std.ArrayList(i32) = .init(mod.allocator);
+    defer value_stack.deinit();
     var label_stack: std.ArrayList(u32) = .init(mod.allocator);
+    defer label_stack.deinit();
 
     // fbs.pos is the insruction pointer which is a bit weird but works
     while (true) {
@@ -173,6 +175,10 @@ pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
             .i32_mul => {
                 const dst, const src = try pop_binop(&value_stack);
                 dst.* *= src;
+            },
+            .i32_ne => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (dst.* != src) 1 else 0;
             },
             .local_get => {
                 const idx = try readu(r);
@@ -193,9 +199,22 @@ pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
                 // target: right after "loop"
                 try label_stack.append(@intCast(r.context.pos));
             },
+            .br_if => {
+                const idx = try readu(r);
+                if (idx != 0) return error.NotImplemented;
+                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                if (val != 0) {
+                    const loc = label_stack.getLastOrNull() orelse return error.RuntimeError;
+                    r.context.pos = loc;
+                }
+            },
+            .end => {
+                _ = label_stack.popOrNull() orelse break;
+            },
             else => return error.NotImplemented,
         }
     }
+    if (value_stack.items.len != 1) return error.RuntimeError;
 
-    return error.NotImplemented;
+    return value_stack.items[0];
 }
