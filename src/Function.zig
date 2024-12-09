@@ -22,9 +22,11 @@ const ControlItem = struct {
 pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
     self.codeoff = @intCast(r.context.pos);
 
-    const n_locals = try readu(r);
-    for (0..n_locals) |_| {
+    var n_locals: u32 = 1; // TODO
+    const n_local_defs = try readu(r);
+    for (0..n_local_defs) |_| {
         const n_decl = try readu(r);
+        n_locals += n_decl;
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
@@ -84,6 +86,7 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
             .local_get, .local_set, .local_tee => {
                 const idx = try readu(r);
                 dbg(" {}", .{idx});
+                if (idx >= n_locals) return error.InvalidFormat;
             },
             .drop, .select => {},
             .prefixed => {
@@ -128,22 +131,71 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
     self.control = try clist.toOwnedSlice();
 }
 
+pub fn pop_binop(stack: *std.ArrayList(i32)) !struct { *i32, i32 } {
+    if (stack.items.len < 2) return error.RuntimeError;
+    const src = stack.pop();
+    return .{ &stack.items[stack.items.len - 1], src };
+}
+
 pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
     var locals: [10]i32 = .{0} ** 10;
     locals[0] = param;
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
-    var n_locals: u32 = 0;
+    var n_locals: u32 = 1; // TODO
     const n_local_defs = try readu(r);
     for (0..n_local_defs) |_| {
         const n_decl = try readu(r);
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         n_locals += n_decl;
         if (typ != .i32) return error.NotImplemented;
-        dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
-    if (n_local_defs > 9) return error.NotImplemented;
+    if (n_locals > 10) return error.NotImplemented;
+
+    var value_stack: std.ArrayList(i32) = .init(mod.allocator);
+    var label_stack: std.ArrayList(u32) = .init(mod.allocator);
+
+    // fbs.pos is the insruction pointer which is a bit weird but works
+    while (true) {
+        const pos: u32 = @intCast(r.context.pos);
+        const inst: defs.OpCode = @enumFromInt(try r.readByte());
+        dbg("{}: {s}\n", .{ pos, @tagName(inst) });
+        switch (inst) {
+            .i32_const => {
+                const val = try readLeb(r, i32);
+                try value_stack.append(val);
+            },
+            .i32_add => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* += src;
+            },
+            .i32_mul => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* *= src;
+            },
+            .local_get => {
+                const idx = try readu(r);
+                try value_stack.append(locals[idx]);
+            },
+            .local_set => {
+                const idx = try readu(r);
+                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                locals[idx] = val;
+            },
+            .local_tee => {
+                const idx = try readu(r);
+                const val = value_stack.getLastOrNull() orelse return error.RuntimeError;
+                locals[idx] = val;
+            },
+            .loop => {
+                try read.blocktype(r);
+                // target: right after "loop"
+                try label_stack.append(@intCast(r.context.pos));
+            },
+            else => return error.NotImplemented,
+        }
+    }
 
     return error.NotImplemented;
 }
