@@ -52,7 +52,8 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
         switch (inst) {
             .block, .loop, .if_ => {
                 level += 1;
-                try read.blocktype(r);
+                const typ = try read.blocktype(r);
+                dbg(" typ={}", .{typ});
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
                 try cstack.append(.{ .start = @intCast(clist.items.len - 1) });
             },
@@ -162,7 +163,6 @@ pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
-        dbg("{}: {s}\n", .{ pos, @tagName(inst) });
         switch (inst) {
             .i32_const => {
                 const val = try readLeb(r, i32);
@@ -195,7 +195,7 @@ pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
                 locals[idx] = val;
             },
             .loop => {
-                try read.blocktype(r);
+                _ = try read.blocktype(r);
                 // target: right after "loop"
                 try label_stack.append(@intCast(r.context.pos));
             },
@@ -211,7 +211,10 @@ pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
             .end => {
                 _ = label_stack.popOrNull() orelse break;
             },
-            else => return error.NotImplemented,
+            else => {
+                dbg("{}: {s}\n", .{ pos, @tagName(inst) });
+                return error.NotImplemented;
+            },
         }
     }
     if (value_stack.items.len != 1) return error.RuntimeError;

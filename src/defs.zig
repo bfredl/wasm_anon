@@ -34,6 +34,11 @@ pub const ValType = enum(u8) {
     _,
 };
 
+pub const BlockType = union(enum) {
+    simple: ValType,
+    complex_idx: u32,
+};
+
 pub const OpCode = enum(u8) {
     unreachable_ = 0x00,
     nop = 0x01,

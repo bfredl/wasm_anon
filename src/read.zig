@@ -25,14 +25,14 @@ pub fn peekByte(r: Reader) u8 {
     return r.context.buffer[r.context.pos];
 }
 
-pub fn blocktype(r: Reader) !void {
+pub fn blocktype(r: Reader) !defs.BlockType {
     // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
     const nextByte = peekByte(r);
     if ((nextByte & 0xc0) == 0x40) {
         const t: defs.ValType = @enumFromInt(try r.readByte());
-        dbg(" typ={s}", .{@tagName(t)});
+        return .{ .simple = t };
     } else {
         const tidx: u32 = @intCast(try readLeb(r, i33));
-        dbg(" typid={}", .{tidx});
+        return .{ .complex_idx = tidx };
     }
 }
