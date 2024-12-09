@@ -215,6 +215,11 @@ pub fn code_section(self: *Module, r: Reader) !void {
     }
 }
 
+pub fn execute(self: *Module, idx: u32, arg0: i32) !i32 {
+    if (idx >= self.funcs.len) return error.OutOfRange;
+    return self.funcs[idx].execute(self, arg0);
+}
+
 test "basic functionality" {
     try testing.expect(11 == 10);
 }

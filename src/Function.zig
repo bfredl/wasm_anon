@@ -5,6 +5,7 @@ control: ?[]ControlItem,
 
 const std = @import("std");
 const defs = @import("./defs.zig");
+const Module = @import("./Module.zig");
 const dbg = std.debug.print;
 
 const read = @import("./read.zig");
@@ -125,4 +126,24 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
     }
 
     self.control = try clist.toOwnedSlice();
+}
+
+pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
+    var locals: [10]i32 = .{0} ** 10;
+    locals[0] = param;
+    var fbs = mod.fbs_at(self.codeoff);
+    const r = fbs.reader();
+
+    var n_locals: u32 = 0;
+    const n_local_defs = try readu(r);
+    for (0..n_local_defs) |_| {
+        const n_decl = try readu(r);
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        n_locals += n_decl;
+        if (typ != .i32) return error.NotImplemented;
+        dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
+    }
+    if (n_local_defs > 9) return error.NotImplemented;
+
+    return error.NotImplemented;
 }

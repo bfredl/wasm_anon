@@ -33,9 +33,16 @@ pub fn main() !void {
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
 
-    if (try mod.lookup_export("_start")) |sym| {
+    if (argv.len == 3) return usage();
+    if (argv.len >= 4) {
+        const sym = try mod.lookup_export(std.mem.span(argv[2])) orelse
+            return dbg("not found :pensive:\n", .{});
+
         dbg("SYM: {}\n", .{sym});
-    } else {
-        dbg("not found :pensive:\n", .{});
+        if (sym.kind != .func) return dbg("not a function :(\n", .{});
+
+        const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
+        const res = try mod.execute(sym.idx, num);
+        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res });
     }
 }
