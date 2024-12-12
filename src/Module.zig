@@ -49,8 +49,9 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         };
         const kind: defs.SectionKind = @enumFromInt(id);
 
+        const pos = fbs.pos;
         const len = try readu(r);
-        dbg("SECTION: {s} ({}) with len {}\n", .{ @tagName(kind), id, len });
+        dbg("SECTION: {s} ({}) at {} with len {}\n", .{ @tagName(kind), id, pos, len });
         const end_pos = fbs.pos + len;
         switch (kind) {
             .type => try type_section(r),

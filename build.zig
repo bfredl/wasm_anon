@@ -16,18 +16,33 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("wasm_shelf", wasm_shelf);
-
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
-
     run_cmd.step.dependOn(b.getInstallStep());
-
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const wast_exe = b.addExecutable(.{
+        .name = "run_wast_tests",
+        .root_source_file = b.path("src/wast_runner.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    wast_exe.root_module.addImport("wasm_shelf", wasm_shelf);
+    b.installArtifact(wast_exe);
+
+    const wast_run_cmd = b.addRunArtifact(wast_exe);
+    wast_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        wast_run_cmd.addArgs(args);
+    }
+    const wast_run_step = b.step("wast", "Run the app");
+    wast_run_step.dependOn(&wast_run_cmd.step);
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.

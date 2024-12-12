@@ -1,7 +1,6 @@
 const std = @import("std");
 const defs = @import("./defs.zig");
 pub const Reader = std.io.FixedBufferStream([]const u8).Reader;
-const dbg = std.debug.print;
 
 pub fn readLeb(r: Reader, comptime T: type) !T {
     return switch (@typeInfo(T).int.signedness) {

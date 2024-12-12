@@ -1,6 +1,3 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
 const std = @import("std");
 const dbg = std.debug.print;
 
@@ -9,6 +6,7 @@ const wasm_shelf = @import("wasm_shelf");
 pub fn usage() void {
     dbg("Read the source code.\n", .{});
 }
+
 pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     const fil = try std.fs.cwd().openFile(filename, .{});
     const stat = try std.posix.fstat(fil.handle);
