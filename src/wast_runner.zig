@@ -28,15 +28,12 @@ pub fn main() !void {
     errdefer t.fail_pos();
 
     _ = try t.expect(.LeftParen);
-    const mod = try t.expect(.Atom);
-    if (!std.mem.eql(u8, t.rawtext(mod), "module")) {
-        return error.InvalidFormat;
-    }
+    try t.expectAtom("module");
 
     var level: u32 = 1;
 
     while (try t.next()) |tok| {
-        dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
+        // dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
         switch (tok.kind) {
             .LeftParen => level += 1,
             .RightParen => level -= 1,
@@ -45,7 +42,26 @@ pub fn main() !void {
         if (level == 0) break;
     }
 
-    dbg("GOOD LORD, THERE IT HAPPENDED\n", .{});
+    while (t.nonws()) |_| {
+        _ = try t.expect(.LeftParen);
+        try t.expectAtom("assert_return");
+        _ = try t.expect(.LeftParen);
+        try t.expectAtom("invoke");
+        const name = try t.expect(.String);
+        dbg("raw: {s}\n", .{t.rawtext(name)});
+        _ = try t.expect(.LeftParen);
+        try t.expectAtom("i32.const");
+        const param = try t.expect(.Atom);
+        dbg("raw param: {s}\n", .{t.rawtext(param)});
+        _ = try t.expect(.RightParen);
+        _ = try t.expect(.RightParen);
+        _ = try t.expect(.LeftParen);
+        try t.expectAtom("i32.const");
+        const ret = try t.expect(.Atom);
+        dbg("raw ret: {s}\n", .{t.rawtext(ret)});
+        _ = try t.expect(.RightParen);
+        _ = try t.expect(.RightParen);
+    }
 
     while (try t.next()) |tok| {
         dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
@@ -193,6 +209,13 @@ const Tokenizer = struct {
         const tok = try self.next() orelse return error.ParseError;
         if (tok.kind != t) return error.ParseError;
         return tok;
+    }
+
+    pub fn expectAtom(self: *Tokenizer, atom: []const u8) !void {
+        const tok = try self.expect(.Atom);
+        if (!std.mem.eql(u8, self.rawtext(tok), atom)) {
+            return error.ParseError;
+        }
     }
 
     fn rawtext(self: *Tokenizer, t: Token) []const u8 {
