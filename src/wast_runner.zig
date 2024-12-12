@@ -26,8 +26,29 @@ pub fn main() !void {
 
     var t: Tokenizer = .{ .str = buf };
     errdefer t.fail_pos();
+
+    _ = try t.expect(.LeftParen);
+    const mod = try t.expect(.Atom);
+    if (!std.mem.eql(u8, t.rawtext(mod), "module")) {
+        return error.InvalidFormat;
+    }
+
+    var level: u32 = 1;
+
     while (try t.next()) |tok| {
-        dbg("{},{}: {s}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind) });
+        dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
+        switch (tok.kind) {
+            .LeftParen => level += 1,
+            .RightParen => level -= 1,
+            else => continue,
+        }
+        if (level == 0) break;
+    }
+
+    dbg("GOOD LORD, THERE IT HAPPENDED\n", .{});
+
+    while (try t.next()) |tok| {
+        dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
     }
 }
 
@@ -119,6 +140,7 @@ const Tokenizer = struct {
     const Token = struct {
         kind: TokenKind,
         pos: usize,
+        len: usize,
     };
 
     pub fn next(self: *Tokenizer) !?Token {
@@ -149,7 +171,7 @@ const Tokenizer = struct {
                 },
             }
         };
-        return .{ .kind = kind, .pos = start };
+        return .{ .kind = kind, .pos = start, .len = self.pos - start };
     }
 
     fn string(self: *Tokenizer) !void {
@@ -165,5 +187,15 @@ const Tokenizer = struct {
             }
         }
         return error.ParseError;
+    }
+
+    pub fn expect(self: *Tokenizer, t: TokenKind) !Token {
+        const tok = try self.next() orelse return error.ParseError;
+        if (tok.kind != t) return error.ParseError;
+        return tok;
+    }
+
+    fn rawtext(self: *Tokenizer, t: Token) []const u8 {
+        return self.str[t.pos..][0..t.len];
     }
 };
