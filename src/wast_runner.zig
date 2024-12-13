@@ -30,37 +30,41 @@ pub fn main() !void {
     _ = try t.expect(.LeftParen);
     try t.expectAtom("module");
 
-    var level: u32 = 1;
+    try t.skip(1);
 
-    while (try t.next()) |tok| {
-        // dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
-        switch (tok.kind) {
-            .LeftParen => level += 1,
-            .RightParen => level -= 1,
-            else => continue,
-        }
-        if (level == 0) break;
-    }
+    const mod_source = buf[0..t.pos];
+    const mod_code = try wat2wasm(mod_source, allocator);
+
+    var mod = try wasm_shelf.Module.parse(mod_code, allocator);
+    defer mod.deinit();
 
     while (t.nonws()) |_| {
         _ = try t.expect(.LeftParen);
         try t.expectAtom("assert_return");
         _ = try t.expect(.LeftParen);
         try t.expectAtom("invoke");
-        const name = try t.expect(.String);
-        dbg("raw: {s}\n", .{t.rawtext(name)});
+        const name_tok = try t.expect(.String);
+        const name = try t.simple_string(name_tok);
         _ = try t.expect(.LeftParen);
         try t.expectAtom("i32.const");
         const param = try t.expect(.Atom);
-        dbg("raw param: {s}\n", .{t.rawtext(param)});
+        const num_param = try std.fmt.parseInt(i32, t.rawtext(param), 10);
         _ = try t.expect(.RightParen);
         _ = try t.expect(.RightParen);
         _ = try t.expect(.LeftParen);
         try t.expectAtom("i32.const");
         const ret = try t.expect(.Atom);
-        dbg("raw ret: {s}\n", .{t.rawtext(ret)});
+        const num_ret = try std.fmt.parseInt(i32, t.rawtext(ret), 10);
         _ = try t.expect(.RightParen);
         _ = try t.expect(.RightParen);
+
+        const sym = try mod.lookup_export(name) orelse
+            return error.NotFound;
+
+        if (sym.kind != .func) return error.Wattaf;
+
+        const res = try mod.execute(sym.idx, num_param);
+        dbg("{s}({}): actual: {}, expected: {}\n", .{ name, num_param, res, num_ret });
     }
 
     while (try t.next()) |tok| {
@@ -190,6 +194,20 @@ const Tokenizer = struct {
         return .{ .kind = kind, .pos = start, .len = self.pos - start };
     }
 
+    pub fn skip(self: *Tokenizer, levels: u32) !void {
+        var level: u32 = levels;
+
+        while (try self.next()) |tok| {
+            // dbg("{},{}: {s} {}\n", .{ self.lnum + 1, tok.pos - self.lpos, @tagName(tok.kind), tok.len });
+            switch (tok.kind) {
+                .LeftParen => level += 1,
+                .RightParen => level -= 1,
+                else => continue,
+            }
+            if (level == 0) break;
+        }
+    }
+
     fn string(self: *Tokenizer) !void {
         self.pos += 1; // first "
         while (self.pos < self.str.len) : (self.pos += 1) {
@@ -221,4 +239,35 @@ const Tokenizer = struct {
     fn rawtext(self: *Tokenizer, t: Token) []const u8 {
         return self.str[t.pos..][0..t.len];
     }
+
+    // dummy hack, give us any string value which can be read without allocation
+    fn simple_string(self: *Tokenizer, t: Token) ![]const u8 {
+        const text = self.rawtext(t);
+        if (text.len < 2 or text[0] != '"' or text[text.len - 1] != '"') return error.FormatError;
+        if (std.mem.indexOfScalar(u8, text, '\\')) |_| return error.NotImplemented;
+        return text[1 .. text.len - 1];
+    }
 };
+
+fn wat2wasm(source: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    const argv = &[_][]const u8{ "wat2wasm", "-", "--output=-" };
+
+    const Child = std.process.Child;
+    var child: Child = .init(argv, allocator);
+
+    child.stdout_behavior = Child.StdIo.Pipe;
+    child.stdin_behavior = Child.StdIo.Pipe;
+    child.stderr_behavior = Child.StdIo.Inherit;
+    try child.spawn();
+    try child.stdin.?.writeAll(source);
+    child.stdin.?.close();
+    child.stdin = null; // dumma
+    const out = child.stdout.?.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    switch (try child.wait()) {
+        .Exited => |res| {
+            if (res == 0) return out;
+        },
+        else => {},
+    }
+    return error.ProcessError;
+}

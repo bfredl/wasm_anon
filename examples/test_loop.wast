@@ -30,5 +30,6 @@
       local.get 2)
   (export "loop" (func $loop)))
 
-(assert_return (invoke "loop" (i32.const 1)) (i32.const 1))
-(assert_return (invoke "loop" (i32.const 2)) (i32.const 5))
+(assert_return (invoke "loop" (i32.const 1)) (i32.const 0))
+(assert_return (invoke "loop" (i32.const 2)) (i32.const 1))
+(assert_return (invoke "loop" (i32.const 3)) (i32.const 5))
