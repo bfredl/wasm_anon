@@ -14,12 +14,15 @@ pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
-pub fn main() !void {
+pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
     const argv = std.os.argv;
-    if (argv.len < 2) return dbg("wast_runner {{test_file.wast}}\n", .{});
+    if (argv.len < 2) {
+        dbg("wast_runner {{test_file.wast}}\n", .{});
+        return 1;
+    }
     const filearg = std.mem.span(argv[1]);
     const buf = try readall(allocator, filearg);
     defer allocator.free(buf);
@@ -37,6 +40,9 @@ pub fn main() !void {
 
     var mod = try wasm_shelf.Module.parse(mod_code, allocator);
     defer mod.deinit();
+
+    var cases: u32 = 0;
+    var failures: u32 = 0;
 
     while (t.nonws()) |_| {
         _ = try t.expect(.LeftParen);
@@ -63,13 +69,18 @@ pub fn main() !void {
 
         if (sym.kind != .func) return error.Wattaf;
 
+        cases += 1;
+
         const res = try mod.execute(sym.idx, num_param);
-        dbg("{s}({}): actual: {}, expected: {}\n", .{ name, num_param, res, num_ret });
+
+        if (res != num_ret) {
+            dbg("{s}({}): actual: {}, expected: {}\n", .{ name, num_param, res, num_ret });
+            failures += 1;
+        }
     }
 
-    while (try t.next()) |tok| {
-        dbg("{},{}: {s} {}\n", .{ t.lnum + 1, tok.pos - t.lpos, @tagName(tok.kind), tok.len });
-    }
+    dbg("{} tests, {} ok, {} fail\n", .{ cases, cases - failures, failures });
+    return if (failures > 0) 1 else 0;
 }
 
 const Tokenizer = struct {
