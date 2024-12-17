@@ -179,11 +179,15 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
             },
             .i32_add => {
                 const dst, const src = try pop_binop(&value_stack);
-                dst.* += src;
+                dst.* +%= src;
+            },
+            .i32_sub => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* -%= src;
             },
             .i32_mul => {
                 const dst, const src = try pop_binop(&value_stack);
-                dst.* *= src;
+                dst.* *%= src;
             },
             .i32_ne => {
                 const dst, const src = try pop_binop(&value_stack);

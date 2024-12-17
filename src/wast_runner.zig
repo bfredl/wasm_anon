@@ -47,6 +47,8 @@ pub fn main() !u8 {
     var params: std.ArrayList(i32) = .init(allocator);
 
     while (t.nonws()) |_| {
+        dbg("\rtest at {}:", .{t.lnum + 1});
+
         _ = try t.expect(.LeftParen);
         try t.expectAtom("assert_return");
         _ = try t.expect(.LeftParen);
@@ -86,7 +88,7 @@ pub fn main() !u8 {
         params.items.len = 0;
     }
 
-    dbg("{} tests, {} ok, {} fail\n", .{ cases, cases - failures, failures });
+    dbg("\r{} tests, {} ok, {} fail\n", .{ cases, cases - failures, failures });
     return if (failures > 0) 1 else 0;
 }
 
