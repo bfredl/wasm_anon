@@ -46,11 +46,13 @@ pub fn main() !u8 {
 
     var params: std.ArrayList(i32) = .init(allocator);
 
+    const AssertKind = enum { assert_return, assert_trap };
+
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
 
         _ = try t.expect(.LeftParen);
-        try t.expectAtom("assert_return");
+        const kind = try t.expectAtomChoice(AssertKind);
         _ = try t.expect(.LeftParen);
         try t.expectAtom("invoke");
         const name_tok = try t.expect(.String);
@@ -64,12 +66,6 @@ pub fn main() !u8 {
             try params.append(num_param);
         }
         _ = try t.expect(.RightParen);
-        _ = try t.expect(.LeftParen);
-        try t.expectAtom("i32.const");
-        const ret = try t.expect(.Atom);
-        const num_ret = try t.int(ret);
-        _ = try t.expect(.RightParen);
-        _ = try t.expect(.RightParen);
 
         const sym = try mod.lookup_export(name) orelse
             return error.NotFound;
@@ -78,11 +74,34 @@ pub fn main() !u8 {
 
         cases += 1;
 
-        const res = try mod.execute(sym.idx, params.items);
+        switch (kind) {
+            .assert_return => {
+                _ = try t.expect(.LeftParen);
+                try t.expectAtom("i32.const");
+                const ret = try t.expect(.Atom);
+                const num_ret = try t.int(ret);
+                _ = try t.expect(.RightParen);
+                _ = try t.expect(.RightParen);
 
-        if (res != num_ret) {
-            dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
-            failures += 1;
+                const res = try mod.execute(sym.idx, params.items);
+                if (res != num_ret) {
+                    dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
+                    failures += 1;
+                }
+            },
+            .assert_trap => {
+                _ = try t.expect(.String);
+                if (mod.execute(sym.idx, params.items)) |res| {
+                    dbg("{s}(...): expected trap but got: {}\n", .{ name, res });
+                    failures += 1;
+                } else |err| {
+                    if (err == error.WASMTrap) {
+                        // ok!
+                    } else {
+                        return err;
+                    }
+                }
+            },
         }
 
         params.items.len = 0;
@@ -279,6 +298,11 @@ const Tokenizer = struct {
         if (!std.mem.eql(u8, self.rawtext(tok), atom)) {
             return error.ParseError;
         }
+    }
+
+    pub fn expectAtomChoice(self: *Tokenizer, comptime Choices: type) !Choices {
+        const tok = try self.expect(.Atom);
+        return std.meta.stringToEnum(Choices, self.rawtext(tok)) orelse error.ParseError;
     }
 
     fn rawtext(self: *Tokenizer, t: Token) []const u8 {
