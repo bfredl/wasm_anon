@@ -91,6 +91,7 @@ pub fn main() !u8 {
             },
             .assert_trap => {
                 _ = try t.expect(.String);
+                _ = try t.expect(.RightParen);
                 if (mod.execute(sym.idx, params.items)) |res| {
                     dbg("{s}(...): expected trap but got: {}\n", .{ name, res });
                     failures += 1;
