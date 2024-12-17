@@ -57,7 +57,7 @@ pub fn main() !u8 {
         while (try t.expect_maybe(.LeftParen)) |_| {
             try t.expectAtom("i32.const");
             const param = try t.expect(.Atom);
-            const num_param = try std.fmt.parseInt(i32, t.rawtext(param), 10);
+            const num_param = try t.int(param);
             _ = try t.expect(.RightParen);
             try params.append(num_param);
         }
@@ -65,7 +65,7 @@ pub fn main() !u8 {
         _ = try t.expect(.LeftParen);
         try t.expectAtom("i32.const");
         const ret = try t.expect(.Atom);
-        const num_ret = try std.fmt.parseInt(i32, t.rawtext(ret), 10);
+        const num_ret = try t.int(ret);
         _ = try t.expect(.RightParen);
         _ = try t.expect(.RightParen);
 
@@ -289,6 +289,15 @@ const Tokenizer = struct {
         if (text.len < 2 or text[0] != '"' or text[text.len - 1] != '"') return error.FormatError;
         if (std.mem.indexOfScalar(u8, text, '\\')) |_| return error.NotImplemented;
         return text[1 .. text.len - 1];
+    }
+
+    fn int(self: *Tokenizer, t: Token) !i32 {
+        const text = self.rawtext(t);
+        if (text.len >= 2 and text[0] == '0' and (text[1] == 'x' or text[1] == 'X')) {
+            return @bitCast(try std.fmt.parseInt(u32, text[2..], 16));
+        }
+
+        return try std.fmt.parseInt(i32, text, 10);
     }
 };
 
