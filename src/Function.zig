@@ -1,5 +1,6 @@
 const Function = @This();
 typeidx: u32,
+n_params: u32, // TEMP hack: while we assume only i32 args
 codeoff: u32,
 control: ?[]ControlItem,
 
@@ -19,10 +20,17 @@ const ControlItem = struct {
     jmp_t: u16,
 };
 
-pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
+pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
+    var fbs_type = mod.fbs_at(mod.types[self.typeidx]);
+    const r_type = fbs_type.reader();
+
+    const tag = try r_type.readByte();
+    if (tag != 0x60) return error.InvalidFormat;
+    self.n_params = try readu(r_type);
+
     self.codeoff = @intCast(r.context.pos);
 
-    var n_locals: u32 = 1; // TODO
+    var n_locals: u32 = self.n_params;
     const n_local_defs = try readu(r);
     for (0..n_local_defs) |_| {
         const n_decl = try readu(r);
@@ -34,9 +42,9 @@ pub fn parse(self: *Function, r: Reader, allocator: std.mem.Allocator) !void {
 
     var level: u32 = 1;
 
-    var clist: std.ArrayList(ControlItem) = .init(allocator);
+    var clist: std.ArrayList(ControlItem) = .init(mod.allocator);
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
-    var cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(allocator);
+    var cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(mod.allocator);
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
     try clist.append(.{ .off = @intCast(r.context.pos), .jmp_t = 0 });
     try cstack.append(.{ .start = 0 });
@@ -138,9 +146,10 @@ pub fn pop_binop(stack: *std.ArrayList(i32)) !struct { *i32, i32 } {
     return .{ &stack.items[stack.items.len - 1], src };
 }
 
-pub fn execute(self: *Function, mod: *Module, param: i32) !i32 {
+pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
     var locals: [10]i32 = .{0} ** 10;
-    locals[0] = param;
+    if (params.len != self.n_params) return error.InvalidArgument;
+    @memcpy(locals[0..self.n_params], params);
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 

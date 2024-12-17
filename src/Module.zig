@@ -24,6 +24,7 @@ allocator: std.mem.Allocator,
 raw: []const u8,
 // TODO: {.ptr = undefined, .size = 0} would be a useful idiom..
 funcs: []Function = undefined,
+types: []u32 = undefined,
 
 export_off: u32 = 0,
 
@@ -54,7 +55,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         dbg("SECTION: {s} ({}) at {} with len {}\n", .{ @tagName(kind), id, pos, len });
         const end_pos = fbs.pos + len;
         switch (kind) {
-            .type => try type_section(r),
+            .type => try self.type_section(r),
             .function => try self.function_section(r),
             .memory => try memory_section(r),
             .global => try global_section(r),
@@ -82,10 +83,12 @@ pub fn deinit(self: *Module) void {
     self.allocator.free(self.funcs);
 }
 
-pub fn type_section(r: Reader) !void {
+pub fn type_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("TYPES: {}\n", .{len});
-    for (0..len) |_| {
+    self.types = try self.allocator.alloc(u32, len);
+    for (0..len) |i| {
+        self.types[i] = @intCast(r.context.pos);
         const tag = try r.readByte();
         if (tag != 0x60) return error.InvalidFormat;
         const n_params = try readu(r);
@@ -209,16 +212,16 @@ pub fn code_section(self: *Module, r: Reader) !void {
         dbg("CODE with size {}\n", .{size});
         const endpos = r.context.pos + size;
 
-        try self.funcs[i].parse(r, self.allocator);
+        try self.funcs[i].parse(self, r);
 
         r.context.pos = endpos;
         dbg("\n", .{});
     }
 }
 
-pub fn execute(self: *Module, idx: u32, arg0: i32) !i32 {
+pub fn execute(self: *Module, idx: u32, args: []const i32) !i32 {
     if (idx >= self.funcs.len) return error.OutOfRange;
-    return self.funcs[idx].execute(self, arg0);
+    return self.funcs[idx].execute(self, args);
 }
 
 test "basic functionality" {

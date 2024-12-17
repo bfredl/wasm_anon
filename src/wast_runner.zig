@@ -44,6 +44,8 @@ pub fn main() !u8 {
     var cases: u32 = 0;
     var failures: u32 = 0;
 
+    var params: std.ArrayList(i32) = .init(allocator);
+
     while (t.nonws()) |_| {
         _ = try t.expect(.LeftParen);
         try t.expectAtom("assert_return");
@@ -51,11 +53,14 @@ pub fn main() !u8 {
         try t.expectAtom("invoke");
         const name_tok = try t.expect(.String);
         const name = try t.simple_string(name_tok);
-        _ = try t.expect(.LeftParen);
-        try t.expectAtom("i32.const");
-        const param = try t.expect(.Atom);
-        const num_param = try std.fmt.parseInt(i32, t.rawtext(param), 10);
-        _ = try t.expect(.RightParen);
+
+        while (try t.expect_maybe(.LeftParen)) |_| {
+            try t.expectAtom("i32.const");
+            const param = try t.expect(.Atom);
+            const num_param = try std.fmt.parseInt(i32, t.rawtext(param), 10);
+            _ = try t.expect(.RightParen);
+            try params.append(num_param);
+        }
         _ = try t.expect(.RightParen);
         _ = try t.expect(.LeftParen);
         try t.expectAtom("i32.const");
@@ -71,12 +76,14 @@ pub fn main() !u8 {
 
         cases += 1;
 
-        const res = try mod.execute(sym.idx, num_param);
+        const res = try mod.execute(sym.idx, params.items);
 
         if (res != num_ret) {
-            dbg("{s}({}): actual: {}, expected: {}\n", .{ name, num_param, res, num_ret });
+            dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
             failures += 1;
         }
+
+        params.items.len = 0;
     }
 
     dbg("{} tests, {} ok, {} fail\n", .{ cases, cases - failures, failures });
@@ -88,6 +95,8 @@ const Tokenizer = struct {
     pos: usize = 0,
     lnum: u32 = 0,
     lpos: usize = 0,
+    // if non-null, pos is already at the end of `peeked_tok`
+    peeked_tok: ?Token = null,
 
     const ParseError = error{ParseError};
 
@@ -174,7 +183,7 @@ const Tokenizer = struct {
         len: usize,
     };
 
-    pub fn next(self: *Tokenizer) !?Token {
+    fn next_inner(self: *Tokenizer) !?Token {
         const t = self.nonws() orelse return null;
         const start = self.pos;
 
@@ -203,6 +212,22 @@ const Tokenizer = struct {
             }
         };
         return .{ .kind = kind, .pos = start, .len = self.pos - start };
+    }
+
+    fn next(self: *Tokenizer) !?Token {
+        if (self.peeked_tok) |tok| {
+            self.peeked_tok = null;
+            return tok;
+        }
+        return self.next_inner();
+    }
+
+    fn peek(self: *Tokenizer) !?Token {
+        if (self.peeked_tok) |tok| {
+            return tok;
+        }
+        self.peeked_tok = try self.next_inner();
+        return self.peeked_tok;
     }
 
     pub fn skip(self: *Tokenizer, levels: u32) !void {
@@ -237,6 +262,13 @@ const Tokenizer = struct {
     pub fn expect(self: *Tokenizer, t: TokenKind) !Token {
         const tok = try self.next() orelse return error.ParseError;
         if (tok.kind != t) return error.ParseError;
+        return tok;
+    }
+
+    pub fn expect_maybe(self: *Tokenizer, t: TokenKind) !?Token {
+        const tok = try self.peek() orelse return error.ParseError;
+        if (tok.kind != t) return null;
+        self.peeked_tok = null;
         return tok;
     }
 

@@ -40,7 +40,7 @@ pub fn main() !void {
         if (sym.kind != .func) return dbg("not a function :(\n", .{});
 
         const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
-        const res = try mod.execute(sym.idx, num);
+        const res = try mod.execute(sym.idx, &.{num});
         dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res });
     }
 }
