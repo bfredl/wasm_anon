@@ -210,6 +210,22 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 if (src == 0) return error.WASMTrap;
                 dst.* = @bitCast(@rem(@as(u32, @bitCast(dst.*)), @as(u32, @bitCast(src))));
             },
+            .i32_and => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* &= src;
+            },
+            .i32_or => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* |= src;
+            },
+            .i32_xor => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* ^= src;
+            },
+            .i32_shl => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* <<= @truncate(@as(u32, @bitCast(src)));
+            },
             .i32_ne => {
                 const dst, const src = try pop_binop(&value_stack);
                 dst.* = if (dst.* != src) 1 else 0;
