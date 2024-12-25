@@ -226,6 +226,22 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const dst, const src = try pop_binop(&value_stack);
                 dst.* <<= @truncate(@as(u32, @bitCast(src)));
             },
+            .i32_shr_s => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* >>= @truncate(@as(u32, @bitCast(src)));
+            },
+            .i32_shr_u => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = @bitCast(@as(u32, @bitCast(dst.*)) >> @truncate(@as(u32, @bitCast(src))));
+            },
+            .i32_rotl => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = @bitCast(std.math.rotl(u32, @bitCast(dst.*), src));
+            },
+            .i32_rotr => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = @bitCast(std.math.rotr(u32, @bitCast(dst.*), src));
+            },
             .i32_ne => {
                 const dst, const src = try pop_binop(&value_stack);
                 dst.* = if (dst.* != src) 1 else 0;
