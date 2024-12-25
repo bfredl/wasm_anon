@@ -140,6 +140,11 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
     self.control = try clist.toOwnedSlice();
 }
 
+pub fn top(stack: *std.ArrayList(i32)) !*i32 {
+    if (stack.items.len < 1) return error.RuntimeError;
+    return &stack.items[stack.items.len - 1];
+}
+
 pub fn pop_binop(stack: *std.ArrayList(i32)) !struct { *i32, i32 } {
     if (stack.items.len < 2) return error.RuntimeError;
     const src = stack.pop();
@@ -241,6 +246,18 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
             .i32_rotr => {
                 const dst, const src = try pop_binop(&value_stack);
                 dst.* = @bitCast(std.math.rotr(u32, @bitCast(dst.*), src));
+            },
+            .i32_clz => {
+                const dst = try top(&value_stack);
+                dst.* = @clz(@as(u32, @bitCast(dst.*)));
+            },
+            .i32_ctz => {
+                const dst = try top(&value_stack);
+                dst.* = @ctz(@as(u32, @bitCast(dst.*)));
+            },
+            .i32_popcnt => {
+                const dst = try top(&value_stack);
+                dst.* = @popCount(@as(u32, @bitCast(dst.*)));
             },
             .i32_ne => {
                 const dst, const src = try pop_binop(&value_stack);
