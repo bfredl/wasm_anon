@@ -322,6 +322,8 @@ const Tokenizer = struct {
         const text = self.rawtext(t);
         if (text.len >= 2 and text[0] == '0' and (text[1] == 'x' or text[1] == 'X')) {
             return @bitCast(try std.fmt.parseInt(u32, text[2..], 16));
+        } else if (text.len >= 3 and text[0] == '-' and text[1] == '0' and (text[2] == 'x' or text[2] == 'X')) {
+            return -@as(i32, @bitCast(try std.fmt.parseInt(u32, text[3..], 16)));
         }
 
         return try std.fmt.parseInt(i32, text, 10);

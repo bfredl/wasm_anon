@@ -151,6 +151,10 @@ pub fn pop_binop(stack: *std.ArrayList(i32)) !struct { *i32, i32 } {
     return .{ &stack.items[stack.items.len - 1], src };
 }
 
+fn u(val: i32) u32 {
+    return @bitCast(val);
+}
+
 pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
     var locals: [10]i32 = .{0} ** 10;
     if (params.len != self.n_params) return error.InvalidArgument;
@@ -203,7 +207,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
             .i32_div_u => {
                 const dst, const src = try pop_binop(&value_stack);
                 if (src == 0) return error.WASMTrap;
-                dst.* = @bitCast(@divTrunc(@as(u32, @bitCast(dst.*)), @as(u32, @bitCast(src))));
+                dst.* = @bitCast(@divTrunc(u(dst.*), u(src)));
             },
             .i32_rem_s => {
                 const dst, const src = try pop_binop(&value_stack);
@@ -213,7 +217,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
             .i32_rem_u => {
                 const dst, const src = try pop_binop(&value_stack);
                 if (src == 0) return error.WASMTrap;
-                dst.* = @bitCast(@rem(@as(u32, @bitCast(dst.*)), @as(u32, @bitCast(src))));
+                dst.* = @bitCast(@rem(u(dst.*), u(src)));
             },
             .i32_and => {
                 const dst, const src = try pop_binop(&value_stack);
@@ -229,15 +233,15 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
             },
             .i32_shl => {
                 const dst, const src = try pop_binop(&value_stack);
-                dst.* <<= @truncate(@as(u32, @bitCast(src)));
+                dst.* <<= @truncate(u(src));
             },
             .i32_shr_s => {
                 const dst, const src = try pop_binop(&value_stack);
-                dst.* >>= @truncate(@as(u32, @bitCast(src)));
+                dst.* >>= @truncate(u(src));
             },
             .i32_shr_u => {
                 const dst, const src = try pop_binop(&value_stack);
-                dst.* = @bitCast(@as(u32, @bitCast(dst.*)) >> @truncate(@as(u32, @bitCast(src))));
+                dst.* = @bitCast(u(dst.*) >> @truncate(u(src)));
             },
             .i32_rotl => {
                 const dst, const src = try pop_binop(&value_stack);
@@ -249,19 +253,67 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
             },
             .i32_clz => {
                 const dst = try top(&value_stack);
-                dst.* = @clz(@as(u32, @bitCast(dst.*)));
+                dst.* = @clz(u(dst.*));
             },
             .i32_ctz => {
                 const dst = try top(&value_stack);
-                dst.* = @ctz(@as(u32, @bitCast(dst.*)));
+                dst.* = @ctz(u(dst.*));
             },
             .i32_popcnt => {
                 const dst = try top(&value_stack);
-                dst.* = @popCount(@as(u32, @bitCast(dst.*)));
+                dst.* = @popCount(u(dst.*));
+            },
+            .i32_extend8_s => {
+                const dst = try top(&value_stack);
+                dst.* = @as(i8, @truncate(dst.*));
+            },
+            .i32_extend16_s => {
+                const dst = try top(&value_stack);
+                dst.* = @as(i16, @truncate(dst.*));
+            },
+            .i32_eqz => {
+                const dst = try top(&value_stack);
+                dst.* = if (dst.* == 0) 1 else 0;
+            },
+            .i32_eq => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (dst.* == src) 1 else 0;
             },
             .i32_ne => {
                 const dst, const src = try pop_binop(&value_stack);
                 dst.* = if (dst.* != src) 1 else 0;
+            },
+            .i32_lt_s => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (dst.* < src) 1 else 0;
+            },
+            .i32_lt_u => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (u(dst.*) < u(src)) 1 else 0;
+            },
+            .i32_le_s => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (dst.* <= src) 1 else 0;
+            },
+            .i32_le_u => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (u(dst.*) <= u(src)) 1 else 0;
+            },
+            .i32_gt_s => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (dst.* > src) 1 else 0;
+            },
+            .i32_gt_u => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (u(dst.*) > u(src)) 1 else 0;
+            },
+            .i32_ge_s => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (dst.* >= src) 1 else 0;
+            },
+            .i32_ge_u => {
+                const dst, const src = try pop_binop(&value_stack);
+                dst.* = if (u(dst.*) >= u(src)) 1 else 0;
             },
             .local_get => {
                 const idx = try readu(r);
