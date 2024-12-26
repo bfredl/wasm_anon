@@ -46,7 +46,7 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
 
     var clist: std.ArrayList(ControlItem) = .init(mod.allocator);
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
-    var cstack: std.ArrayList(struct { start: u16, else_: u16 = 0 }) = .init(mod.allocator);
+    var cstack: std.ArrayList(struct { start: u16 }) = .init(mod.allocator);
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
     try clist.append(.{ .off = @intCast(r.context.pos), .jmp_t = 0 });
     try cstack.append(.{ .start = 0 });
@@ -72,16 +72,17 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 const start = &clist.items[cstack.items[cstack.items.len - 1].start];
                 const start_op: defs.OpCode = @enumFromInt(r.context.buffer[start.off]);
                 dbg_parse(" (for {s} at {x:04})", .{ @tagName(start_op), start.off });
-                if (start_op == .if_ or start_op == .block) {
-                    start.jmp_t = @intCast(clist.items.len - 1);
-                }
+                start.jmp_t = @intCast(clist.items.len - 1);
                 cstack.items.len -= 1;
             },
             .ret => {},
             .else_ => {
                 level += 1;
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
-                cstack.items[cstack.items.len - 1].else_ = @intCast(clist.items.len - 1);
+                dbg_parse(" (for if_ at {x:04})", .{clist.items[cstack.items[cstack.items.len - 1].start].off});
+                // "if_" jumps to "else_", and "else_" jumps to end
+                clist.items[cstack.items[cstack.items.len - 1].start].jmp_t = @intCast(clist.items.len - 1);
+                cstack.items[cstack.items.len - 1].start = @intCast(clist.items.len - 1);
             },
             .br, .br_if => {
                 // try clist.append(.{ .off = pos, .jmp_t = 0 });
@@ -358,6 +359,34 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                         _ = try read.blocktype(r);
                     }
                 }
+            },
+            .if_ => {
+                c_ip += 1;
+                _ = try read.blocktype(r);
+                if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
+                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                if (val != 0) {
+                    try label_stack.append(control[c_ip].jmp_t); // we worry about else vs end when we get there..
+                } else {
+                    c_ip = control[c_ip].jmp_t;
+                    r.context.pos = control[c_ip].off;
+                    const c_inst: defs.OpCode = @enumFromInt(try r.readByte());
+                    if (c_inst == .else_) {
+                        try label_stack.append(control[c_ip].jmp_t);
+                    } else {
+                        if (c_inst != .end) @panic("SCREAMING FEAR");
+                        // we already skipped over the "end"
+                    }
+                }
+            },
+            .else_ => {
+                c_ip += 1;
+                if (control[c_ip].off != pos) @panic("CONFLICKTED FEAR");
+                // we can only reach/jump to else from inside the "then" block. time to exit!
+                c_ip = control[c_ip].jmp_t;
+                // execute the end inline
+                r.context.pos = control[c_ip].off + 1;
+                _ = label_stack.popOrNull() orelse break;
             },
             .end => {
                 c_ip += 1;
