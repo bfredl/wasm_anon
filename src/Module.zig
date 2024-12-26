@@ -1,6 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
-const dbg = std.debug.print;
+
+//pub const dbg = std.debug.print;
+pub fn dbg(str: anytype, vals: anytype) void {
+    _ = str;
+    _ = vals;
+}
 
 const defs = @import("./defs.zig");
 const Module = @This();

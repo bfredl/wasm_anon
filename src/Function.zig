@@ -7,7 +7,8 @@ control: ?[]ControlItem,
 const std = @import("std");
 const defs = @import("./defs.zig");
 const Module = @import("./Module.zig");
-const dbg = std.debug.print;
+const dbg_parse = Module.dbg;
+const severe = std.debug.print;
 
 const read = @import("./read.zig");
 const readLeb = read.readLeb;
@@ -36,9 +37,9 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
         const n_decl = try readu(r);
         n_locals += n_decl;
         const typ: defs.ValType = @enumFromInt(try r.readByte());
-        dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
+        dbg_parse("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
-    dbg("\n", .{});
+    dbg_parse("\n", .{});
 
     var level: u32 = 1;
 
@@ -54,14 +55,14 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
 
-        dbg("{x:04}:", .{pos});
-        for (0..level) |_| dbg("  ", .{});
-        dbg("{s}", .{@tagName(inst)});
+        dbg_parse("{x:04}:", .{pos});
+        for (0..level) |_| dbg_parse("  ", .{});
+        dbg_parse("{s}", .{@tagName(inst)});
         switch (inst) {
             .block, .loop, .if_ => {
                 level += 1;
                 const typ = try read.blocktype(r);
-                dbg(" typ={}", .{typ});
+                dbg_parse(" typ={}", .{typ});
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
                 try cstack.append(.{ .start = @intCast(clist.items.len - 1) });
             },
@@ -70,7 +71,7 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 const start = cstack.items[cstack.items.len - 1].start;
                 const off = clist.items[start].off;
                 const start_op: defs.OpCode = @enumFromInt(r.context.buffer[off]);
-                dbg(" (for {s} at {x:04})", .{ @tagName(start_op), off });
+                dbg_parse(" (for {s} at {x:04})", .{ @tagName(start_op), off });
                 cstack.items.len -= 1;
             },
             .ret => {},
@@ -82,25 +83,25 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
             .br, .br_if => {
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
                 const idx = try readu(r);
-                dbg(" {}", .{idx});
+                dbg_parse(" {}", .{idx});
             },
             .i32_const => {
                 const val = try readLeb(r, i32);
-                dbg(" {}", .{val});
+                dbg_parse(" {}", .{val});
             },
             .i64_const => {
                 const val = try readLeb(r, i64);
-                dbg(" {}", .{val});
+                dbg_parse(" {}", .{val});
             },
             .local_get, .local_set, .local_tee => {
                 const idx = try readu(r);
-                dbg(" {}", .{idx});
+                dbg_parse(" {}", .{idx});
                 if (idx >= n_locals) return error.InvalidFormat;
             },
             .drop, .select => {},
             .prefixed => {
                 const code: defs.Prefixed = @enumFromInt(try readu(r));
-                dbg(":{s}", .{@tagName(code)});
+                dbg_parse(":{s}", .{@tagName(code)});
                 switch (code) {
                     .memory_fill => {
                         if (try r.readByte() != 0) return error.InvalidFormat;
@@ -110,7 +111,7 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                         if (try r.readByte() != 0) return error.InvalidFormat;
                     },
                     else => {
-                        dbg(" UNKNOWN: {}, aborting!", .{@intFromEnum(code)});
+                        severe(" UNKNOWN: {}, aborting!", .{@intFromEnum(code)});
                         return;
                     },
                 }
@@ -122,19 +123,19 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 } else if (idx >= 0x28 and idx <= 0x3e) {
                     const alignas = try readu(r);
                     const offset = try readu(r);
-                    dbg(" a={} o={}", .{ alignas, offset });
+                    dbg_parse(" a={} o={}", .{ alignas, offset });
                 } else {
-                    dbg(" TBD, aborting!\n", .{});
+                    severe("inst {s} TBD, aborting!\n", .{@tagName(inst)});
                     return;
                 }
             },
         }
-        dbg("\n", .{});
+        dbg_parse("\n", .{});
     }
 
-    dbg("\n\n", .{});
+    dbg_parse("\n\n", .{});
     for (0.., clist.items) |i, c| {
-        dbg("{:2}: {x:04} {}\n", .{ i, c.off, c.jmp_t });
+        dbg_parse("{:2}: {x:04} {}\n", .{ i, c.off, c.jmp_t });
     }
 
     self.control = try clist.toOwnedSlice();
@@ -347,7 +348,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 _ = label_stack.popOrNull() orelse break;
             },
             else => {
-                dbg("{}: {s}\n", .{ pos, @tagName(inst) });
+                severe("{}: {s}\n", .{ pos, @tagName(inst) });
                 return error.NotImplemented;
             },
         }
