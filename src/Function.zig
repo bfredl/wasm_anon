@@ -197,47 +197,6 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const val = try readLeb(r, i32);
                 try value_stack.append(val);
             },
-            .i32_div_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                if (src == 0) return error.WASMTrap;
-                if (dst.* == @as(i32, @bitCast(@as(u32, 0x80000000))) and src == -1) return error.WASMTrap;
-                dst.* = @divTrunc(dst.*, src);
-            },
-            .i32_div_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                if (src == 0) return error.WASMTrap;
-                dst.* = @bitCast(@divTrunc(u(dst.*), u(src)));
-            },
-            .i32_rem_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                if (src == 0) return error.WASMTrap;
-                dst.* = if (dst.* == @as(i32, @bitCast(@as(u32, 0x80000000))) and src == -1) 0 else @rem(dst.*, src);
-            },
-            .i32_rem_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                if (src == 0) return error.WASMTrap;
-                dst.* = @bitCast(@rem(u(dst.*), u(src)));
-            },
-            .i32_shl => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* <<= @truncate(u(src));
-            },
-            .i32_shr_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* >>= @truncate(u(src));
-            },
-            .i32_shr_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = @bitCast(u(dst.*) >> @truncate(u(src)));
-            },
-            .i32_rotl => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = @bitCast(std.math.rotl(u32, @bitCast(dst.*), src));
-            },
-            .i32_rotr => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = @bitCast(std.math.rotr(u32, @bitCast(dst.*), src));
-            },
             .i32_clz => {
                 const dst = try top(&value_stack);
                 dst.* = @clz(u(dst.*));
