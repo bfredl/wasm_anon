@@ -139,6 +139,7 @@ pub const OpCode = enum(u8) {
     i32_clz = 0x67,
     i32_ctz = 0x68,
     i32_popcnt = 0x69,
+
     i32_add = 0x6A,
     i32_sub = 0x6B,
     i32_mul = 0x6C,
@@ -238,6 +239,18 @@ pub const OpCode = enum(u8) {
 
     prefixed = 0xFC,
 };
+
+pub const Category = enum {
+    i32_binop,
+    other,
+};
+
+// to start with this is only used at comptime
+pub fn category(op: OpCode) Category {
+    const numval = @intFromEnum(op);
+    if (numval >= 0x6A and numval <= 0x78) return .i32_binop;
+    return .other;
+}
 
 pub const Prefixed = enum(u32) {
     i32_trunc_sat_f32_s = 0,

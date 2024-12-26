@@ -6,6 +6,7 @@ control: ?[]ControlItem,
 
 const std = @import("std");
 const defs = @import("./defs.zig");
+const ops = @import("./ops.zig");
 const Module = @import("./Module.zig");
 const dbg_parse = Module.dbg;
 const severe = std.debug.print;
@@ -196,18 +197,6 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const val = try readLeb(r, i32);
                 try value_stack.append(val);
             },
-            .i32_add => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* +%= src;
-            },
-            .i32_sub => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* -%= src;
-            },
-            .i32_mul => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* *%= src;
-            },
             .i32_div_s => {
                 const dst, const src = try pop_binop(&value_stack);
                 if (src == 0) return error.WASMTrap;
@@ -228,18 +217,6 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const dst, const src = try pop_binop(&value_stack);
                 if (src == 0) return error.WASMTrap;
                 dst.* = @bitCast(@rem(u(dst.*), u(src)));
-            },
-            .i32_and => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* &= src;
-            },
-            .i32_or => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* |= src;
-            },
-            .i32_xor => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* ^= src;
             },
             .i32_shl => {
                 const dst, const src = try pop_binop(&value_stack);
@@ -393,9 +370,16 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 if (control[c_ip].off != pos) @panic("PANIKED FEAR");
                 _ = label_stack.popOrNull() orelse break;
             },
-            else => {
-                severe("{}: {s}\n", .{ pos, @tagName(inst) });
-                return error.NotImplemented;
+            inline else => |tag| {
+                const category = comptime defs.category(tag);
+                const name = @tagName(tag);
+                if (category == .i32_binop) {
+                    const dst, const src = try pop_binop(&value_stack);
+                    dst.* = try @field(ops.ibinop, name[4..])(i32, dst.*, src);
+                } else {
+                    severe("{}: {s}\n", .{ pos, @tagName(inst) });
+                    return error.NotImplemented;
+                }
             },
         }
     }
