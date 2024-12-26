@@ -2,7 +2,8 @@ const std = @import("std");
 const testing = std.testing;
 
 //pub const dbg = std.debug.print;
-pub fn dbg(str: anytype, vals: anytype) void {
+pub const dbg = nodbg;
+pub fn nodbg(str: anytype, vals: anytype) void {
     _ = str;
     _ = vals;
 }

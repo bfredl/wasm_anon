@@ -9,6 +9,7 @@ const defs = @import("./defs.zig");
 const Module = @import("./Module.zig");
 const dbg_parse = Module.dbg;
 const severe = std.debug.print;
+const dbg_rt = Module.nodbg;
 
 const read = @import("./read.zig");
 const readLeb = read.readLeb;
@@ -68,10 +69,12 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
             },
             .end => {
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
-                const start = cstack.items[cstack.items.len - 1].start;
-                const off = clist.items[start].off;
-                const start_op: defs.OpCode = @enumFromInt(r.context.buffer[off]);
-                dbg_parse(" (for {s} at {x:04})", .{ @tagName(start_op), off });
+                const start = &clist.items[cstack.items[cstack.items.len - 1].start];
+                const start_op: defs.OpCode = @enumFromInt(r.context.buffer[start.off]);
+                dbg_parse(" (for {s} at {x:04})", .{ @tagName(start_op), start.off });
+                if (start_op == .if_ or start_op == .block) {
+                    start.jmp_t = @intCast(clist.items.len - 1);
+                }
                 cstack.items.len -= 1;
             },
             .ret => {},
@@ -81,7 +84,7 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 cstack.items[cstack.items.len - 1].else_ = @intCast(clist.items.len - 1);
             },
             .br, .br_if => {
-                try clist.append(.{ .off = pos, .jmp_t = 0 });
+                // try clist.append(.{ .off = pos, .jmp_t = 0 });
                 const idx = try readu(r);
                 dbg_parse(" {}", .{idx});
             },
@@ -163,6 +166,8 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
+    const control = self.control orelse @panic("impossibru");
+
     var n_locals: u32 = 1; // TODO
     const n_local_defs = try readu(r);
     for (0..n_local_defs) |_| {
@@ -178,10 +183,13 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
     var label_stack: std.ArrayList(u32) = .init(mod.allocator);
     defer label_stack.deinit();
 
+    var c_ip: u32 = 0;
+
     // fbs.pos is the insruction pointer which is a bit weird but works
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
+        dbg_rt("{}: {s} ({})\n", .{ pos, @tagName(inst), c_ip });
         switch (inst) {
             .i32_const => {
                 const val = try readLeb(r, i32);
@@ -331,20 +339,29 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 locals[idx] = val;
             },
             .loop => {
+                c_ip += 1;
                 _ = try read.blocktype(r);
                 // target: right after "loop"
-                try label_stack.append(@intCast(r.context.pos));
+                try label_stack.append(c_ip);
             },
             .br_if => {
                 const idx = try readu(r);
                 if (idx != 0) return error.NotImplemented;
                 const val = value_stack.popOrNull() orelse return error.RuntimeError;
                 if (val != 0) {
-                    const loc = label_stack.getLastOrNull() orelse return error.RuntimeError;
-                    r.context.pos = loc;
+                    c_ip = label_stack.getLastOrNull() orelse return error.RuntimeError;
+                    r.context.pos = control[c_ip].off;
+                    // we don't want to rexec the loop header. however execute the "end"
+                    // target to clean-up the stack.
+                    if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
+                        r.context.pos += 1;
+                        _ = try read.blocktype(r);
+                    }
                 }
             },
             .end => {
+                c_ip += 1;
+                if (control[c_ip].off != pos) @panic("PANIKED FEAR");
                 _ = label_stack.popOrNull() orelse break;
             },
             else => {
