@@ -44,10 +44,11 @@ pub fn main() !u8 {
 
     var cases: u32 = 0;
     var failures: u32 = 0;
+    var unapplicable: u32 = 0;
 
     var params: std.ArrayList(StackValue) = .init(allocator);
 
-    const AssertKind = enum { assert_return, assert_trap };
+    const AssertKind = enum { assert_return, assert_trap, assert_invalid, assert_malformed };
     const ConstKind = enum { @"i32.const", @"i64.const" };
 
     while (t.nonws()) |_| {
@@ -55,6 +56,12 @@ pub fn main() !u8 {
 
         _ = try t.expect(.LeftParen);
         const kind = try t.expectAtomChoice(AssertKind);
+        if (kind == .assert_invalid or kind == .assert_malformed) {
+            // invalid already as text formats. we need separate tests for invalid binary formats..
+            unapplicable += 1;
+            try t.skip(1);
+            continue;
+        }
         _ = try t.expect(.LeftParen);
         try t.expectAtom("invoke");
         const name_tok = try t.expect(.String);
@@ -121,12 +128,13 @@ pub fn main() !u8 {
                     }
                 }
             },
+            .assert_invalid, .assert_malformed => unreachable,
         }
 
         params.items.len = 0;
     }
 
-    dbg("\r{} tests, {} ok, {} fail\n", .{ cases, cases - failures, failures });
+    dbg("\r{} tests, {} ok, {} fail ({} unapplicable)\n", .{ cases, cases - failures, failures, unapplicable });
     return if (failures > 0) 1 else 0;
 }
 
