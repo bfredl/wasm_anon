@@ -62,3 +62,36 @@ pub const ibinop = struct {
         return @bitCast(std.math.rotr(utype(t), @bitCast(lhs), rhs));
     }
 };
+
+pub const irelop = struct {
+    pub fn eq(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs == rhs;
+    }
+    pub fn ne(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs != rhs;
+    }
+    pub fn lt_s(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs < rhs;
+    }
+    pub fn lt_u(comptime t: type, lhs: t, rhs: t) bool {
+        return u(lhs) < u(rhs);
+    }
+    pub fn le_s(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs <= rhs;
+    }
+    pub fn le_u(comptime t: type, lhs: t, rhs: t) bool {
+        return u(lhs) <= u(rhs);
+    }
+    pub fn gt_s(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs > rhs;
+    }
+    pub fn gt_u(comptime t: type, lhs: t, rhs: t) bool {
+        return u(lhs) > u(rhs);
+    }
+    pub fn ge_s(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs >= rhs;
+    }
+    pub fn ge_u(comptime t: type, lhs: t, rhs: t) bool {
+        return u(lhs) >= u(rhs);
+    }
+};

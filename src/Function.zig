@@ -221,46 +221,6 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const dst = try top(&value_stack);
                 dst.* = if (dst.* == 0) 1 else 0;
             },
-            .i32_eq => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (dst.* == src) 1 else 0;
-            },
-            .i32_ne => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (dst.* != src) 1 else 0;
-            },
-            .i32_lt_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (dst.* < src) 1 else 0;
-            },
-            .i32_lt_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (u(dst.*) < u(src)) 1 else 0;
-            },
-            .i32_le_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (dst.* <= src) 1 else 0;
-            },
-            .i32_le_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (u(dst.*) <= u(src)) 1 else 0;
-            },
-            .i32_gt_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (dst.* > src) 1 else 0;
-            },
-            .i32_gt_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (u(dst.*) > u(src)) 1 else 0;
-            },
-            .i32_ge_s => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (dst.* >= src) 1 else 0;
-            },
-            .i32_ge_u => {
-                const dst, const src = try pop_binop(&value_stack);
-                dst.* = if (u(dst.*) >= u(src)) 1 else 0;
-            },
             .local_get => {
                 const idx = try readu(r);
                 try value_stack.append(locals[idx]);
@@ -335,6 +295,9 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 if (category == .i32_binop) {
                     const dst, const src = try pop_binop(&value_stack);
                     dst.* = try @field(ops.ibinop, name[4..])(i32, dst.*, src);
+                } else if (category == .i32_relop) {
+                    const dst, const src = try pop_binop(&value_stack);
+                    dst.* = if (@field(ops.irelop, name[4..])(i32, dst.*, src)) 1 else 0;
                 } else {
                     severe("{}: {s}\n", .{ pos, @tagName(inst) });
                     return error.NotImplemented;

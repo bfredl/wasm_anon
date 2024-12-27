@@ -242,6 +242,7 @@ pub const OpCode = enum(u8) {
 
 pub const Category = enum {
     i32_binop,
+    i32_relop,
     other,
 };
 
@@ -249,6 +250,7 @@ pub const Category = enum {
 pub fn category(op: OpCode) Category {
     const numval = @intFromEnum(op);
     if (numval >= 0x6A and numval <= 0x78) return .i32_binop;
+    if (numval >= 0x46 and numval <= 0x4F) return .i32_relop;
     return .other;
 }
 
