@@ -2,6 +2,7 @@ const std = @import("std");
 const dbg = std.debug.print;
 
 const wasm_shelf = @import("wasm_shelf");
+const StackValue = wasm_shelf.StackValue;
 
 pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     const fil = try std.fs.cwd().openFile(filename, .{});
@@ -44,7 +45,7 @@ pub fn main() !u8 {
     var cases: u32 = 0;
     var failures: u32 = 0;
 
-    var params: std.ArrayList(i32) = .init(allocator);
+    var params: std.ArrayList(StackValue) = .init(allocator);
 
     const AssertKind = enum { assert_return, assert_trap };
 
@@ -63,7 +64,7 @@ pub fn main() !u8 {
             const param = try t.expect(.Atom);
             const num_param = try t.int(param);
             _ = try t.expect(.RightParen);
-            try params.append(num_param);
+            try params.append(.{ .i32 = num_param });
         }
         _ = try t.expect(.RightParen);
 
@@ -84,7 +85,7 @@ pub fn main() !u8 {
                 _ = try t.expect(.RightParen);
 
                 const res = try mod.execute(sym.idx, params.items);
-                if (res != num_ret) {
+                if (res.i32 != num_ret) {
                     dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
                     failures += 1;
                 }

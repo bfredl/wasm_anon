@@ -225,7 +225,7 @@ pub fn code_section(self: *Module, r: Reader) !void {
     }
 }
 
-pub fn execute(self: *Module, idx: u32, args: []const i32) !i32 {
+pub fn execute(self: *Module, idx: u32, args: []const Function.StackValue) !Function.StackValue {
     if (idx >= self.funcs.len) return error.OutOfRange;
     return self.funcs[idx].execute(self, args);
 }

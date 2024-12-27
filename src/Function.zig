@@ -146,23 +146,30 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
     self.control = try clist.toOwnedSlice();
 }
 
-pub fn top(stack: *std.ArrayList(i32)) !*i32 {
+pub fn top32(stack: *std.ArrayList(StackValue)) !*i32 {
     if (stack.items.len < 1) return error.RuntimeError;
-    return &stack.items[stack.items.len - 1];
+    return &stack.items[stack.items.len - 1].i32;
 }
 
-pub fn pop_binop(stack: *std.ArrayList(i32)) !struct { *i32, i32 } {
+pub fn pop_binop32(stack: *std.ArrayList(StackValue)) !struct { *i32, i32 } {
     if (stack.items.len < 2) return error.RuntimeError;
     const src = stack.pop();
-    return .{ &stack.items[stack.items.len - 1], src };
+    return .{ &stack.items[stack.items.len - 1].i32, src.i32 };
 }
 
 fn u(val: i32) u32 {
     return @bitCast(val);
 }
 
-pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
-    var locals: [10]i32 = .{0} ** 10;
+// type punning is NOT safe, this assumes validaded WASM code
+pub const StackValue = extern union {
+    i32: i32,
+    i64: i64,
+};
+
+pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !StackValue {
+    // TODO: typesafe init??
+    var locals: [10]StackValue = .{StackValue{ .i32 = 0 }} ** 10;
     if (params.len != self.n_params) return error.InvalidArgument;
     @memcpy(locals[0..self.n_params], params);
     var fbs = mod.fbs_at(self.codeoff);
@@ -180,7 +187,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
     }
     if (n_locals > 10) return error.NotImplemented;
 
-    var value_stack: std.ArrayList(i32) = .init(mod.allocator);
+    var value_stack: std.ArrayList(StackValue) = .init(mod.allocator);
     defer value_stack.deinit();
     var label_stack: std.ArrayList(u32) = .init(mod.allocator);
     defer label_stack.deinit();
@@ -195,30 +202,30 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
         switch (inst) {
             .i32_const => {
                 const val = try readLeb(r, i32);
-                try value_stack.append(val);
+                try value_stack.append(.{ .i32 = val });
             },
             .i32_clz => {
-                const dst = try top(&value_stack);
+                const dst = try top32(&value_stack);
                 dst.* = @clz(u(dst.*));
             },
             .i32_ctz => {
-                const dst = try top(&value_stack);
+                const dst = try top32(&value_stack);
                 dst.* = @ctz(u(dst.*));
             },
             .i32_popcnt => {
-                const dst = try top(&value_stack);
+                const dst = try top32(&value_stack);
                 dst.* = @popCount(u(dst.*));
             },
             .i32_extend8_s => {
-                const dst = try top(&value_stack);
+                const dst = try top32(&value_stack);
                 dst.* = @as(i8, @truncate(dst.*));
             },
             .i32_extend16_s => {
-                const dst = try top(&value_stack);
+                const dst = try top32(&value_stack);
                 dst.* = @as(i16, @truncate(dst.*));
             },
             .i32_eqz => {
-                const dst = try top(&value_stack);
+                const dst = try top32(&value_stack);
                 dst.* = if (dst.* == 0) 1 else 0;
             },
             .local_get => {
@@ -245,7 +252,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const idx = try readu(r);
                 if (idx != 0) return error.NotImplemented;
                 const val = value_stack.popOrNull() orelse return error.RuntimeError;
-                if (val != 0) {
+                if (val.i32 != 0) {
                     c_ip = label_stack.getLastOrNull() orelse return error.RuntimeError;
                     r.context.pos = control[c_ip].off;
                     // we don't want to rexec the loop header. however execute the "end"
@@ -261,7 +268,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 _ = try read.blocktype(r);
                 if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
                 const val = value_stack.popOrNull() orelse return error.RuntimeError;
-                if (val != 0) {
+                if (val.i32 != 0) {
                     try label_stack.append(control[c_ip].jmp_t); // we worry about else vs end when we get there..
                 } else {
                     c_ip = control[c_ip].jmp_t;
@@ -293,10 +300,10 @@ pub fn execute(self: *Function, mod: *Module, params: []const i32) !i32 {
                 const category = comptime defs.category(tag);
                 const name = @tagName(tag);
                 if (category == .i32_binop) {
-                    const dst, const src = try pop_binop(&value_stack);
+                    const dst, const src = try pop_binop32(&value_stack);
                     dst.* = try @field(ops.ibinop, name[4..])(i32, dst.*, src);
                 } else if (category == .i32_relop) {
-                    const dst, const src = try pop_binop(&value_stack);
+                    const dst, const src = try pop_binop32(&value_stack);
                     dst.* = if (@field(ops.irelop, name[4..])(i32, dst.*, src)) 1 else 0;
                 } else {
                     severe("{}: {s}\n", .{ pos, @tagName(inst) });

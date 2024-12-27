@@ -2,6 +2,7 @@ const std = @import("std");
 const dbg = std.debug.print;
 
 const wasm_shelf = @import("wasm_shelf");
+const StackValue = wasm_shelf.StackValue;
 
 pub fn usage() void {
     dbg("Read the source code.\n", .{});
@@ -40,7 +41,7 @@ pub fn main() !void {
         if (sym.kind != .func) return dbg("not a function :(\n", .{});
 
         const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
-        const res = try mod.execute(sym.idx, &.{num});
-        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res });
+        const res = try mod.execute(sym.idx, &.{.{ .i32 = num }});
+        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res.i32 });
     }
 }
