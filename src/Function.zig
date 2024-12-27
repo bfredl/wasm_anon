@@ -8,9 +8,9 @@ const std = @import("std");
 const defs = @import("./defs.zig");
 const ops = @import("./ops.zig");
 const Module = @import("./Module.zig");
-const dbg_parse = Module.dbg;
+const dbg_parse = severe;
 const severe = std.debug.print;
-const dbg_rt = Module.nodbg;
+const dbg_rt = severe;
 
 const read = @import("./read.zig");
 const readLeb = read.readLeb;
@@ -200,7 +200,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
-        dbg_rt("{}: {s} ({})\n", .{ pos, @tagName(inst), c_ip });
+        dbg_rt("{x:04}: {s} ({})\n", .{ pos, @tagName(inst), c_ip });
         switch (inst) {
             .i32_const => {
                 const val = try readLeb(r, i32);
@@ -250,8 +250,16 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                     if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
                         r.context.pos += 1;
                         _ = try read.blocktype(r);
+                    } else {
+                        c_ip -= 1; // messy!
                     }
                 }
+            },
+            .block => {
+                c_ip += 1;
+                _ = try read.blocktype(r);
+                if (control[c_ip].off != pos) @panic("MANIC FEAR");
+                try label_stack.append(control[c_ip].jmp_t);
             },
             .if_ => {
                 c_ip += 1;
