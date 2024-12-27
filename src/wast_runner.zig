@@ -81,29 +81,31 @@ pub fn main() !u8 {
 
         switch (kind) {
             .assert_return => {
-                _ = try t.expect(.LeftParen);
-                const typ = try t.expectAtomChoice(ConstKind);
-                const ret = try t.expect(.Atom);
-                _ = try t.expect(.RightParen);
-                _ = try t.expect(.RightParen);
-
                 const res = try mod.execute(sym.idx, params.items);
-                switch (typ) {
-                    .@"i32.const" => {
-                        const num_ret = try t.int(i32, ret);
-                        if (res.i32 != num_ret) {
-                            dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res.i32, num_ret });
-                            failures += 1;
-                        }
-                    },
-                    .@"i64.const" => {
-                        const num_ret = try t.int(i64, ret);
-                        if (res.i64 != num_ret) {
-                            dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
-                            failures += 1;
-                        }
-                    },
+
+                if (try t.expect_maybe(.LeftParen)) |_| {
+                    const typ = try t.expectAtomChoice(ConstKind);
+                    const ret = try t.expect(.Atom);
+                    _ = try t.expect(.RightParen);
+
+                    switch (typ) {
+                        .@"i32.const" => {
+                            const num_ret = try t.int(i32, ret);
+                            if (res.i32 != num_ret) {
+                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res.i32, num_ret });
+                                failures += 1;
+                            }
+                        },
+                        .@"i64.const" => {
+                            const num_ret = try t.int(i64, ret);
+                            if (res.i64 != num_ret) {
+                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
+                                failures += 1;
+                            }
+                        },
+                    }
                 }
+                _ = try t.expect(.RightParen);
             },
             .assert_trap => {
                 _ = try t.expect(.String);

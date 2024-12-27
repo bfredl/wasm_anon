@@ -165,6 +165,8 @@ fn u(val: i32) u32 {
 pub const StackValue = extern union {
     i32: i32,
     i64: i64,
+    f32: f32,
+    f64: f64,
 };
 
 pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !StackValue {
@@ -175,7 +177,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
-    const control = self.control orelse @panic("impossibru");
+    const control = self.control orelse @panic("uncontrollable function");
 
     var n_locals: u32 = 1; // TODO
     const n_local_defs = try readu(r);
@@ -203,6 +205,10 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             .i32_const => {
                 const val = try readLeb(r, i32);
                 try value_stack.append(.{ .i32 = val });
+            },
+            .i64_const => {
+                const val = try readLeb(r, i64);
+                try value_stack.append(.{ .i64 = val });
             },
             .i32_eqz => {
                 const dst = try top(&value_stack);
