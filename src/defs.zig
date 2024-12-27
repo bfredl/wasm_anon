@@ -159,6 +159,7 @@ pub const OpCode = enum(u8) {
     i64_clz = 0x79,
     i64_ctz = 0x7A,
     i64_popcnt = 0x7B,
+
     i64_add = 0x7C,
     i64_sub = 0x7D,
     i64_mul = 0x7E,
@@ -241,16 +242,26 @@ pub const OpCode = enum(u8) {
 };
 
 pub const Category = enum {
+    i32_unop,
     i32_binop,
     i32_relop,
+    i64_unop,
+    i64_binop,
+    i64_relop,
     other,
 };
 
 // to start with this is only used at comptime
 pub fn category(op: OpCode) Category {
     const numval = @intFromEnum(op);
-    if (numval >= 0x6A and numval <= 0x78) return .i32_binop;
     if (numval >= 0x46 and numval <= 0x4F) return .i32_relop;
+    if (numval >= 0x51 and numval <= 0x5A) return .i64_relop;
+    if (numval >= 0x67 and numval <= 0x69) return .i32_unop;
+    if (numval >= 0x6A and numval <= 0x78) return .i32_binop;
+    if (numval >= 0x79 and numval <= 0x7B) return .i64_unop;
+    if (numval >= 0x7C and numval <= 0x8A) return .i64_binop;
+    if (numval >= 0xC0 and numval <= 0xC1) return .i32_unop;
+    if (numval >= 0xC2 and numval <= 0xC4) return .i64_unop;
     return .other;
 }
 

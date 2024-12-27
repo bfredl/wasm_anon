@@ -95,3 +95,24 @@ pub const irelop = struct {
         return u(lhs) >= u(rhs);
     }
 };
+
+pub const iunop = struct {
+    pub fn clz(comptime t: type, val: t) t {
+        return @clz(u(val));
+    }
+    pub fn ctz(comptime t: type, val: t) t {
+        return @ctz(u(val));
+    }
+    pub fn popcnt(comptime t: type, val: t) t {
+        return @popCount(u(val));
+    }
+    pub fn extend8_s(comptime t: type, val: t) t {
+        return @as(i8, @truncate(val));
+    }
+    pub fn extend16_s(comptime t: type, val: t) t {
+        return @as(i16, @truncate(val));
+    }
+    pub fn extend32_s(comptime t: type, val: t) t {
+        return @as(i32, @truncate(val));
+    }
+};

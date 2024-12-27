@@ -48,6 +48,7 @@ pub fn main() !u8 {
     var params: std.ArrayList(StackValue) = .init(allocator);
 
     const AssertKind = enum { assert_return, assert_trap };
+    const ConstKind = enum { @"i32.const", @"i64.const" };
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
@@ -60,11 +61,14 @@ pub fn main() !u8 {
         const name = try t.simple_string(name_tok);
 
         while (try t.expect_maybe(.LeftParen)) |_| {
-            try t.expectAtom("i32.const");
+            const typ = try t.expectAtomChoice(ConstKind);
             const param = try t.expect(.Atom);
-            const num_param = try t.int(param);
+            const value: StackValue = switch (typ) {
+                .@"i32.const" => .{ .i32 = try t.int(i32, param) },
+                .@"i64.const" => .{ .i64 = try t.int(i64, param) },
+            };
             _ = try t.expect(.RightParen);
-            try params.append(.{ .i32 = num_param });
+            try params.append(value);
         }
         _ = try t.expect(.RightParen);
 
@@ -78,16 +82,27 @@ pub fn main() !u8 {
         switch (kind) {
             .assert_return => {
                 _ = try t.expect(.LeftParen);
-                try t.expectAtom("i32.const");
+                const typ = try t.expectAtomChoice(ConstKind);
                 const ret = try t.expect(.Atom);
-                const num_ret = try t.int(ret);
                 _ = try t.expect(.RightParen);
                 _ = try t.expect(.RightParen);
 
                 const res = try mod.execute(sym.idx, params.items);
-                if (res.i32 != num_ret) {
-                    dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
-                    failures += 1;
+                switch (typ) {
+                    .@"i32.const" => {
+                        const num_ret = try t.int(i32, ret);
+                        if (res.i32 != num_ret) {
+                            dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res.i32, num_ret });
+                            failures += 1;
+                        }
+                    },
+                    .@"i64.const" => {
+                        const num_ret = try t.int(i64, ret);
+                        if (res.i64 != num_ret) {
+                            dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
+                            failures += 1;
+                        }
+                    },
                 }
             },
             .assert_trap => {
@@ -319,15 +334,16 @@ const Tokenizer = struct {
         return text[1 .. text.len - 1];
     }
 
-    fn int(self: *Tokenizer, t: Token) !i32 {
+    fn int(self: *Tokenizer, ityp: type, t: Token) !ityp {
+        const utyp = if (ityp == i32) u32 else if (ityp == i64) u64 else unreachable;
         const text = self.rawtext(t);
         if (text.len >= 2 and text[0] == '0' and (text[1] == 'x' or text[1] == 'X')) {
-            return @bitCast(try std.fmt.parseInt(u32, text[2..], 16));
+            return @bitCast(try std.fmt.parseInt(utyp, text[2..], 16));
         } else if (text.len >= 3 and text[0] == '-' and text[1] == '0' and (text[2] == 'x' or text[2] == 'X')) {
-            return -@as(i32, @bitCast(try std.fmt.parseInt(u32, text[3..], 16)));
+            return -@as(ityp, @bitCast(try std.fmt.parseInt(utyp, text[3..], 16)));
         }
 
-        return try std.fmt.parseInt(i32, text, 10);
+        return try std.fmt.parseInt(ityp, text, 10);
     }
 };
 

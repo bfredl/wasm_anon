@@ -146,15 +146,15 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
     self.control = try clist.toOwnedSlice();
 }
 
-pub fn top32(stack: *std.ArrayList(StackValue)) !*i32 {
+pub fn top(stack: *std.ArrayList(StackValue)) !*StackValue {
     if (stack.items.len < 1) return error.RuntimeError;
-    return &stack.items[stack.items.len - 1].i32;
+    return &stack.items[stack.items.len - 1];
 }
 
-pub fn pop_binop32(stack: *std.ArrayList(StackValue)) !struct { *i32, i32 } {
+pub fn pop_binop(stack: *std.ArrayList(StackValue)) !struct { *StackValue, StackValue } {
     if (stack.items.len < 2) return error.RuntimeError;
     const src = stack.pop();
-    return .{ &stack.items[stack.items.len - 1].i32, src.i32 };
+    return .{ &stack.items[stack.items.len - 1], src };
 }
 
 fn u(val: i32) u32 {
@@ -204,29 +204,13 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                 const val = try readLeb(r, i32);
                 try value_stack.append(.{ .i32 = val });
             },
-            .i32_clz => {
-                const dst = try top32(&value_stack);
-                dst.* = @clz(u(dst.*));
-            },
-            .i32_ctz => {
-                const dst = try top32(&value_stack);
-                dst.* = @ctz(u(dst.*));
-            },
-            .i32_popcnt => {
-                const dst = try top32(&value_stack);
-                dst.* = @popCount(u(dst.*));
-            },
-            .i32_extend8_s => {
-                const dst = try top32(&value_stack);
-                dst.* = @as(i8, @truncate(dst.*));
-            },
-            .i32_extend16_s => {
-                const dst = try top32(&value_stack);
-                dst.* = @as(i16, @truncate(dst.*));
-            },
             .i32_eqz => {
-                const dst = try top32(&value_stack);
-                dst.* = if (dst.* == 0) 1 else 0;
+                const dst = try top(&value_stack);
+                dst.i32 = if (dst.i32 == 0) 1 else 0;
+            },
+            .i64_eqz => {
+                const dst = try top(&value_stack);
+                dst.i32 = if (dst.i64 == 0) 1 else 0;
             },
             .local_get => {
                 const idx = try readu(r);
@@ -299,15 +283,35 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 const name = @tagName(tag);
-                if (category == .i32_binop) {
-                    const dst, const src = try pop_binop32(&value_stack);
-                    dst.* = try @field(ops.ibinop, name[4..])(i32, dst.*, src);
-                } else if (category == .i32_relop) {
-                    const dst, const src = try pop_binop32(&value_stack);
-                    dst.* = if (@field(ops.irelop, name[4..])(i32, dst.*, src)) 1 else 0;
-                } else {
-                    severe("{}: {s}\n", .{ pos, @tagName(inst) });
-                    return error.NotImplemented;
+                switch (category) {
+                    .i32_unop => {
+                        const dst = try top(&value_stack);
+                        dst.i32 = @field(ops.iunop, name[4..])(i32, dst.i32);
+                    },
+                    .i32_binop => {
+                        const dst, const src = try pop_binop(&value_stack);
+                        dst.i32 = try @field(ops.ibinop, name[4..])(i32, dst.i32, src.i32);
+                    },
+                    .i32_relop => {
+                        const dst, const src = try pop_binop(&value_stack);
+                        dst.i32 = if (@field(ops.irelop, name[4..])(i32, dst.i32, src.i32)) 1 else 0;
+                    },
+                    .i64_unop => {
+                        const dst = try top(&value_stack);
+                        dst.i64 = @field(ops.iunop, name[4..])(i64, dst.i64);
+                    },
+                    .i64_binop => {
+                        const dst, const src = try pop_binop(&value_stack);
+                        dst.i64 = try @field(ops.ibinop, name[4..])(i64, dst.i64, src.i64);
+                    },
+                    .i64_relop => {
+                        const dst, const src = try pop_binop(&value_stack);
+                        dst.i32 = if (@field(ops.irelop, name[4..])(i64, dst.i64, src.i64)) 1 else 0;
+                    },
+                    .other => {
+                        severe("{}: {s}\n", .{ pos, @tagName(inst) });
+                        return error.NotImplemented;
+                    },
                 }
             },
         }
