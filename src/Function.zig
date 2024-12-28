@@ -1,16 +1,16 @@
 const Function = @This();
 typeidx: u32,
-n_params: u32, // TEMP hack: while we assume only i32 args
-codeoff: u32,
-control: ?[]ControlItem,
+n_params: u32 = undefined, // TEMP hack: while we assume only i32 args
+codeoff: u32 = undefined,
+control: ?[]ControlItem = null,
 
 const std = @import("std");
 const defs = @import("./defs.zig");
 const ops = @import("./ops.zig");
 const Module = @import("./Module.zig");
-const dbg_parse = severe;
+const dbg_parse = Module.dbg;
 const severe = std.debug.print;
-const dbg_rt = severe;
+const dbg_rt = Module.nodbg;
 
 const read = @import("./read.zig");
 const readLeb = read.readLeb;
@@ -131,7 +131,7 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                     dbg_parse(" a={} o={}", .{ alignas, offset });
                 } else {
                     severe("inst {s} TBD, aborting!\n", .{@tagName(inst)});
-                    return;
+                    return error.NotImplemented;
                 }
             },
         }
@@ -170,6 +170,12 @@ pub const StackValue = extern union {
 };
 
 pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !StackValue {
+    if (self.control == null) {
+        var fbs2 = mod.fbs_at(self.codeoff);
+        const r_parse = fbs2.reader();
+        try self.parse(mod, r_parse);
+    }
+
     // TODO: typesafe init??
     var locals: [10]StackValue = .{StackValue{ .i32 = 0 }} ** 10;
     if (params.len != self.n_params) return error.InvalidArgument;
@@ -177,7 +183,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
-    const control = self.control orelse @panic("uncontrollable function");
+    const control = self.control orelse @panic("how could you");
 
     var n_locals: u32 = 1; // TODO
     const n_local_defs = try readu(r);

@@ -180,7 +180,7 @@ fn function_section(self: *Module, r: Reader) !void {
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
         const idx = try readu(r);
-        self.funcs[i].typeidx = idx;
+        self.funcs[i] = .{ .typeidx = idx };
     }
     dbg("...\n", .{});
 }
@@ -217,8 +217,10 @@ pub fn code_section(self: *Module, r: Reader) !void {
         const size = try readu(r);
         dbg("CODE with size {}\n", .{size});
         const endpos = r.context.pos + size;
+        self.funcs[i].codeoff = @intCast(r.context.pos);
 
-        try self.funcs[i].parse(self, r);
+        // if(force_eager)
+        // try self.funcs[i].parse(self, r);
 
         r.context.pos = endpos;
         dbg("\n", .{});
