@@ -98,6 +98,16 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 const val = try readLeb(r, i64);
                 dbg_parse(" {}", .{val});
             },
+            .f32_const => {
+                const ival = try r.readInt(u32, .little);
+                const val: f32 = @bitCast(ival);
+                dbg_parse(" {}", .{val});
+            },
+            .f64_const => {
+                const ival = try r.readInt(u64, .little);
+                const val: f64 = @bitCast(ival);
+                dbg_parse(" {}", .{val});
+            },
             .local_get, .local_set, .local_tee => {
                 const idx = try readu(r);
                 dbg_parse(" {}", .{idx});
@@ -215,6 +225,14 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             .i64_const => {
                 const val = try readLeb(r, i64);
                 try value_stack.append(.{ .i64 = val });
+            },
+            .f32_const => {
+                const ival = try r.readInt(u32, .little);
+                try value_stack.append(.{ .f32 = @bitCast(ival) });
+            },
+            .f64_const => {
+                const ival = try r.readInt(u64, .little);
+                try value_stack.append(.{ .f64 = @bitCast(ival) });
             },
             .i32_eqz => {
                 const dst = try top(&value_stack);

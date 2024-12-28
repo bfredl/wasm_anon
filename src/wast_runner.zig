@@ -49,7 +49,7 @@ pub fn main() !u8 {
     var params: std.ArrayList(StackValue) = .init(allocator);
 
     const AssertKind = enum { assert_return, assert_trap, assert_invalid, assert_malformed };
-    const ConstKind = enum { @"i32.const", @"i64.const" };
+    const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const" };
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
@@ -73,6 +73,7 @@ pub fn main() !u8 {
             const value: StackValue = switch (typ) {
                 .@"i32.const" => .{ .i32 = try t.int(i32, param) },
                 .@"i64.const" => .{ .i64 = try t.int(i64, param) },
+                else => return error.NotImplemented,
             };
             _ = try t.expect(.RightParen);
             try params.append(value);
@@ -106,6 +107,20 @@ pub fn main() !u8 {
                         .@"i64.const" => {
                             const num_ret = try t.int(i64, ret);
                             if (res.i64 != num_ret) {
+                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
+                                failures += 1;
+                            }
+                        },
+                        .@"f32.const" => {
+                            const num_ret = try t.float(f32, ret);
+                            if (res.f32 != num_ret) {
+                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
+                                failures += 1;
+                            }
+                        },
+                        .@"f64.const" => {
+                            const num_ret = try t.float(f64, ret);
+                            if (res.f64 != num_ret) {
                                 dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
                                 failures += 1;
                             }
@@ -354,6 +369,11 @@ const Tokenizer = struct {
         }
 
         return try std.fmt.parseInt(ityp, text, 10);
+    }
+
+    fn float(self: *Tokenizer, ftyp: type, t: Token) !ftyp {
+        const text = self.rawtext(t);
+        return try std.fmt.parseFloat(ftyp, text);
     }
 };
 
