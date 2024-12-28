@@ -76,7 +76,6 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 start.jmp_t = @intCast(clist.items.len - 1);
                 cstack.items.len -= 1;
             },
-            .ret => {},
             .else_ => {
                 level += 1;
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
@@ -88,6 +87,11 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
             .br, .br_if => {
                 // try clist.append(.{ .off = pos, .jmp_t = 0 });
                 const idx = try readu(r);
+                dbg_parse(" {}", .{idx});
+            },
+            .ret => {},
+            .call => {
+                const idx = try readLeb(r, u32);
                 dbg_parse(" {}", .{idx});
             },
             .i32_const => {
@@ -317,6 +321,14 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                 c_ip += 1;
                 if (control[c_ip].off != pos) @panic("PANIKED FEAR");
                 _ = label_stack.popOrNull() orelse break;
+            },
+            .ret => {
+                break;
+            },
+            .call => {
+                const idx = try readLeb(r, u32);
+                _ = idx;
+                severe("lies!\n", .{});
             },
             inline else => |tag| {
                 const category = comptime defs.category(tag);
