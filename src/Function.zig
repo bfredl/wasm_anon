@@ -1,6 +1,7 @@
 const Function = @This();
 typeidx: u32,
-n_params: u32 = undefined, // TEMP hack: while we assume only i32 args
+n_params: u32 = undefined,
+n_ret: u32 = undefined,
 codeoff: u32 = undefined,
 control: ?[]ControlItem = null,
 
@@ -30,6 +31,10 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
     const tag = try r_type.readByte();
     if (tag != 0x60) return error.InvalidFormat;
     self.n_params = try readu(r_type);
+    for (0..self.n_params) |_| {
+        _ = try r_type.readByte(); // TEMP hack: while we don't validate runtime args
+    }
+    self.n_ret = try readu(r_type);
 
     self.codeoff = @intCast(r.context.pos);
 
@@ -366,7 +371,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             },
         }
     }
-    if (value_stack.items.len != 1) return error.RuntimeError;
+    if (value_stack.items.len != self.n_ret) return error.RuntimeError;
 
-    return value_stack.items[0];
+    return if (self.n_ret > 0) value_stack.items[0] else .{ .i32 = 0x4EADBEAF };
 }
