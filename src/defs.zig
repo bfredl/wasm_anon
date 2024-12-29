@@ -37,6 +37,13 @@ pub const ValType = enum(u8) {
 pub const BlockType = union(enum) {
     simple: ValType,
     complex_idx: u32,
+
+    pub fn results(self: BlockType) !u16 {
+        return switch (self) {
+            .simple => |vt| if (vt == .void) 0 else 1,
+            .complex_idx => error.NotImplemented,
+        };
+    }
 };
 
 pub const OpCode = enum(u8) {

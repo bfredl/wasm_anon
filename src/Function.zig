@@ -188,6 +188,12 @@ pub const StackValue = extern union {
     f64: f64,
 };
 
+pub const StackLabel = struct {
+    c_ip: u32,
+    n_args: u16,
+    stack_level: u16,
+};
+
 pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !StackValue {
     if (self.control == null) {
         var fbs2 = mod.fbs_at(self.codeoff);
@@ -216,7 +222,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
 
     var value_stack: std.ArrayList(StackValue) = .init(mod.allocator);
     defer value_stack.deinit();
-    var label_stack: std.ArrayList(u32) = .init(mod.allocator);
+    var label_stack: std.ArrayList(StackLabel) = .init(mod.allocator);
     defer label_stack.deinit();
 
     var c_ip: u32 = 0;
@@ -225,7 +231,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
-        dbg_rt("{x:04}: {s} ({})\n", .{ pos, @tagName(inst), c_ip });
+        dbg_rt("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, value_stack.items.len, label_stack.items.len });
         switch (inst) {
             .i32_const => {
                 const val = try readLeb(r, i32);
@@ -269,15 +275,19 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                 c_ip += 1;
                 _ = try read.blocktype(r);
                 // target: right after "loop"
-                try label_stack.append(c_ip);
+                try label_stack.append(.{ .c_ip = c_ip, .stack_level = @intCast(value_stack.items.len), .n_args = 0 });
             },
             .br_if => {
                 const idx = try readu(r);
                 if (idx != 0) return error.NotImplemented;
                 const val = value_stack.popOrNull() orelse return error.RuntimeError;
                 if (val.i32 != 0) {
-                    c_ip = label_stack.getLastOrNull() orelse return error.RuntimeError;
+                    const last = label_stack.getLastOrNull() orelse return error.RuntimeError;
+                    c_ip = last.c_ip;
                     r.context.pos = control[c_ip].off;
+                    if (last.n_args != 0) return error.NotImplemented;
+                    if (value_stack.items.len < last.stack_level) @panic("DISASSOCIATING FEAR");
+                    value_stack.items.len = last.stack_level;
                     // we don't want to rexec the loop header. however execute the "end"
                     // target to clean-up the stack.
                     if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
@@ -290,23 +300,26 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             },
             .block => {
                 c_ip += 1;
-                _ = try read.blocktype(r);
+                const typ = try read.blocktype(r);
+                const n_results = try typ.results();
+                // target: right after "loop"
                 if (control[c_ip].off != pos) @panic("MANIC FEAR");
-                try label_stack.append(control[c_ip].jmp_t);
+                try label_stack.append(.{ .c_ip = control[c_ip].jmp_t, .stack_level = @intCast(value_stack.items.len), .n_args = n_results });
             },
             .if_ => {
                 c_ip += 1;
-                _ = try read.blocktype(r);
+                const typ = try read.blocktype(r);
+                const n_results = try typ.results();
                 if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
                 const val = value_stack.popOrNull() orelse return error.RuntimeError;
                 if (val.i32 != 0) {
-                    try label_stack.append(control[c_ip].jmp_t); // we worry about else vs end when we get there..
+                    try label_stack.append(.{ .c_ip = control[c_ip].jmp_t, .stack_level = @intCast(value_stack.items.len), .n_args = n_results }); // we worry about else vs end when we get there..
                 } else {
                     c_ip = control[c_ip].jmp_t;
                     r.context.pos = control[c_ip].off;
                     const c_inst: defs.OpCode = @enumFromInt(try r.readByte());
                     if (c_inst == .else_) {
-                        try label_stack.append(control[c_ip].jmp_t);
+                        try label_stack.append(.{ .c_ip = control[c_ip].jmp_t, .stack_level = @intCast(value_stack.items.len), .n_args = n_results });
                     } else {
                         if (c_inst != .end) @panic("SCREAMING FEAR");
                         // we already skipped over the "end"
