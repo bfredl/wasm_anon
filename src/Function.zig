@@ -233,6 +233,9 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         dbg_rt("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, value_stack.items.len, label_stack.items.len });
         switch (inst) {
+            .drop => {
+                _ = value_stack.popOrNull() orelse return error.RuntimeError;
+            },
             .i32_const => {
                 const val = try readLeb(r, i32);
                 try value_stack.append(.{ .i32 = val });
@@ -285,9 +288,13 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                     const last = label_stack.getLastOrNull() orelse return error.RuntimeError;
                     c_ip = last.c_ip;
                     r.context.pos = control[c_ip].off;
-                    if (last.n_args != 0) return error.NotImplemented;
-                    if (value_stack.items.len < last.stack_level) @panic("DISASSOCIATING FEAR");
-                    value_stack.items.len = last.stack_level;
+                    const new_level = last.stack_level + last.n_args;
+                    if (value_stack.items.len < new_level) @panic("DISASSOCIATING FEAR");
+                    if (value_stack.items.len > new_level) {
+                        const src = value_stack.items.len - last.n_args;
+                        std.mem.copyForwards(StackValue, value_stack.items[last.stack_level..][0..last.n_args], value_stack.items[src..][0..last.n_args]);
+                        value_stack.items.len = new_level;
+                    }
                     // we don't want to rexec the loop header. however execute the "end"
                     // target to clean-up the stack.
                     if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
