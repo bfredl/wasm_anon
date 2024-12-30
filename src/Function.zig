@@ -282,9 +282,10 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             },
             .br_if => {
                 const idx = try readu(r);
-                if (idx != 0) return error.NotImplemented;
+                if (idx + 1 > label_stack.items.len) return error.RuntimeError;
                 const val = value_stack.popOrNull() orelse return error.RuntimeError;
                 if (val.i32 != 0) {
+                    label_stack.items.len -= idx;
                     const last = label_stack.getLastOrNull() orelse return error.RuntimeError;
                     c_ip = last.c_ip;
                     r.context.pos = control[c_ip].off;
