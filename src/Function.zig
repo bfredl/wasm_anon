@@ -134,6 +134,11 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 dbg_parse(" {}", .{idx});
                 if (idx >= n_locals) return error.InvalidFormat;
             },
+            .global_get, .global_set => {
+                const idx = try readu(r);
+                dbg_parse(" {}", .{idx});
+                if (idx >= mod.n_globals) return error.InvalidFormat;
+            },
             .drop, .select => {},
             .prefixed => {
                 const code: defs.Prefixed = @enumFromInt(try readu(r));

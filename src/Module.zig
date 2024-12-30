@@ -33,6 +33,7 @@ funcs: []Function = undefined,
 types: []u32 = undefined,
 
 export_off: u32 = 0,
+n_globals: u32 = 0,
 
 const Function = @import("./Function.zig");
 
@@ -64,7 +65,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .type => try self.type_section(r),
             .function => try self.function_section(r),
             .memory => try memory_section(r),
-            .global => try global_section(r),
+            .global => try self.global_section(r),
             .import => try import_section(r),
             .export_ => {
                 self.export_off = @intCast(fbs.pos);
@@ -194,9 +195,10 @@ pub fn memory_section(r: Reader) !void {
     }
 }
 
-pub fn global_section(r: Reader) !void {
+pub fn global_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("GLOBALS: {}\n", .{len});
+    self.n_globals = len;
     dbg("tbd...\n", .{});
 }
 
