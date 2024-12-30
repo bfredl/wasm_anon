@@ -94,10 +94,22 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 const idx = try readu(r);
                 dbg_parse(" {}", .{idx});
             },
+            .br_table => {
+                const n = try readu(r);
+                for (0..n) |_| {
+                    _ = try readu(r);
+                }
+                _ = try readu(r); // default
+            },
             .ret => {},
             .call => {
                 const idx = try readLeb(r, u32);
                 dbg_parse(" {}", .{idx});
+            },
+            .call_indirect => {
+                const tblidx = try readLeb(r, u32);
+                const idx = try readLeb(r, u32);
+                dbg_parse(" {}:{}", .{ tblidx, idx });
             },
             .i32_const => {
                 const val = try readLeb(r, i32);
@@ -227,6 +239,9 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
 
     var c_ip: u32 = 0;
 
+    // entire body is implicitly a block, producing the return values
+    try label_stack.append(.{ .c_ip = @intCast(control.len - 1), .stack_level = 0, .n_args = @intCast(self.n_ret) });
+
     // fbs.pos is the insruction pointer which is a bit weird but works
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
@@ -346,7 +361,13 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             .end => {
                 c_ip += 1;
                 if (control[c_ip].off != pos) @panic("PANIKED FEAR");
-                _ = label_stack.popOrNull() orelse break;
+                _ = label_stack.popOrNull() orelse @panic("RUSHED FEAR");
+                // todo: cannot do this if we popped a "loop" header
+                // if (value_stack.items.len != item.stack_level + item.n_args) @panic("SAD FEAR");
+                if (label_stack.items.len == 0) {
+                    if (value_stack.items.len != self.n_ret) return error.RuntimeError;
+                    break;
+                }
             },
             .ret => {
                 break;
@@ -392,7 +413,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
             },
         }
     }
-    if (value_stack.items.len != self.n_ret) return error.RuntimeError;
+    if (value_stack.items.len < self.n_ret) return error.RuntimeError;
 
-    return if (self.n_ret > 0) value_stack.items[0] else .{ .i32 = 0x4EADBEAF };
+    return if (self.n_ret > 0) value_stack.items[value_stack.items.len - 1] else .{ .i32 = 0x4EADBEAF };
 }
