@@ -89,7 +89,7 @@ pub fn main() !u8 {
 
         switch (kind) {
             .assert_return => {
-                const res = try mod.execute(sym.idx, params.items);
+                const result = mod.execute(sym.idx, params.items);
 
                 if (try t.expect_maybe(.LeftParen)) |_| {
                     const typ = try t.expectAtomChoice(ConstKind);
@@ -98,21 +98,30 @@ pub fn main() !u8 {
 
                     switch (typ) {
                         inline else => |ctyp| {
-                            const actual = switch (ctyp) {
-                                .@"i32.const" => res.i32,
-                                .@"i64.const" => res.i64,
-                                .@"f32.const" => res.f32,
-                                .@"f64.const" => res.f64,
-                            };
                             const expected = switch (ctyp) {
                                 .@"i32.const" => try t.int(i32, ret),
                                 .@"i64.const" => try t.int(i64, ret),
                                 .@"f32.const" => try t.float(f32, ret),
                                 .@"f64.const" => try t.float(f64, ret),
                             };
-                            if (actual != expected) {
-                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
+                            if (result) |res| {
+                                const actual = switch (ctyp) {
+                                    .@"i32.const" => res.i32,
+                                    .@"i64.const" => res.i64,
+                                    .@"f32.const" => res.f32,
+                                    .@"f64.const" => res.f64,
+                                };
+                                if (actual != expected) {
+                                    dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
+                                    failures += 1;
+                                }
+                            } else |err| {
                                 failures += 1;
+                                switch (err) {
+                                    error.WASMTrap => dbg("{s}(...): TRAP, expected: {}\n", .{ name, expected }),
+                                    error.NotImplemented => {},
+                                    else => |e| return e,
+                                }
                             }
                         },
                     }
@@ -126,10 +135,10 @@ pub fn main() !u8 {
                     dbg("{s}(...): expected trap but got: {}\n", .{ name, res });
                     failures += 1;
                 } else |err| {
-                    if (err == error.WASMTrap) {
-                        // ok!
-                    } else {
-                        return err;
+                    switch (err) {
+                        error.WASMTrap => {}, // ok
+                        error.NotImplemented => failures += 1,
+                        else => |e| return e,
                     }
                 }
             },
