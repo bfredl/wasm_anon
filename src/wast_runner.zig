@@ -15,13 +15,6 @@ pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
-fn failure_check(failures: *u32, name: []const u8, actual: anytype, expected: anytype) void {
-    if (actual != expected) {
-        dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
-        failures.* += 1;
-    }
-}
-
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -104,17 +97,23 @@ pub fn main() !u8 {
                     _ = try t.expect(.RightParen);
 
                     switch (typ) {
-                        .@"i32.const" => {
-                            failure_check(&failures, name, try t.int(i32, ret), res.i32);
-                        },
-                        .@"i64.const" => {
-                            failure_check(&failures, name, try t.int(i64, ret), res.i64);
-                        },
-                        .@"f32.const" => {
-                            failure_check(&failures, name, try t.float(f32, ret), res.f32);
-                        },
-                        .@"f64.const" => {
-                            failure_check(&failures, name, try t.float(f64, ret), res.f64);
+                        inline else => |ctyp| {
+                            const actual = switch (ctyp) {
+                                .@"i32.const" => res.i32,
+                                .@"i64.const" => res.i64,
+                                .@"f32.const" => res.f32,
+                                .@"f64.const" => res.f64,
+                            };
+                            const expected = switch (ctyp) {
+                                .@"i32.const" => try t.int(i32, ret),
+                                .@"i64.const" => try t.int(i64, ret),
+                                .@"f32.const" => try t.float(f32, ret),
+                                .@"f64.const" => try t.float(f64, ret),
+                            };
+                            if (actual != expected) {
+                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
+                                failures += 1;
+                            }
                         },
                     }
                 }
