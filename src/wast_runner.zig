@@ -15,6 +15,13 @@ pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
+fn failure_check(failures: *u32, name: []const u8, actual: anytype, expected: anytype) void {
+    if (actual != expected) {
+        dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
+        failures.* += 1;
+    }
+}
+
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -98,32 +105,16 @@ pub fn main() !u8 {
 
                     switch (typ) {
                         .@"i32.const" => {
-                            const num_ret = try t.int(i32, ret);
-                            if (res.i32 != num_ret) {
-                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res.i32, num_ret });
-                                failures += 1;
-                            }
+                            failure_check(&failures, name, try t.int(i32, ret), res.i32);
                         },
                         .@"i64.const" => {
-                            const num_ret = try t.int(i64, ret);
-                            if (res.i64 != num_ret) {
-                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
-                                failures += 1;
-                            }
+                            failure_check(&failures, name, try t.int(i64, ret), res.i64);
                         },
                         .@"f32.const" => {
-                            const num_ret = try t.float(f32, ret);
-                            if (res.f32 != num_ret) {
-                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
-                                failures += 1;
-                            }
+                            failure_check(&failures, name, try t.float(f32, ret), res.f32);
                         },
                         .@"f64.const" => {
-                            const num_ret = try t.float(f64, ret);
-                            if (res.f64 != num_ret) {
-                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, res, num_ret });
-                                failures += 1;
-                            }
+                            failure_check(&failures, name, try t.float(f64, ret), res.f64);
                         },
                     }
                 }
