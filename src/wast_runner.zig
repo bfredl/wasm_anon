@@ -105,12 +105,7 @@ pub fn main() !u8 {
                                 .@"f64.const" => try t.float(f64, ret),
                             };
                             if (result) |res| {
-                                const actual = switch (ctyp) {
-                                    .@"i32.const" => res.i32,
-                                    .@"i64.const" => res.i64,
-                                    .@"f32.const" => res.f32,
-                                    .@"f64.const" => res.f64,
-                                };
+                                const actual = @field(res, @tagName(ctyp)[0..3]);
                                 if (actual != expected) {
                                     dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
                                     failures += 1;
