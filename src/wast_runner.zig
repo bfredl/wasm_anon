@@ -69,10 +69,16 @@ pub fn main() !u8 {
 
         params.items.len = 0;
 
+        var parse_fail = false;
+
         while (try t.expect_maybe(.LeftParen)) |_| {
             const typ = try t.expectAtomChoice(ConstKind);
             const param = try t.expect(.Atom);
-            const value: StackValue = try t.as_res(typ, param);
+            const value: StackValue = t.as_res(typ, param) catch parm: {
+                dbg("{s} ", .{t.rawtext(param)});
+                parse_fail = true;
+                break :parm undefined;
+            };
             _ = try t.expect(.RightParen);
             try params.append(value);
         }
@@ -97,7 +103,11 @@ pub fn main() !u8 {
                     _ = try t.expect(.RightParen);
 
                     expected_type = typ;
-                    expected_ret = try t.as_res(typ, ret);
+                    expected_ret = t.as_res(typ, ret) catch parm: {
+                        dbg("{s} ", .{t.rawtext(ret)});
+                        parse_fail = true;
+                        break :parm undefined;
+                    };
                 }
             },
             .assert_trap => {
@@ -107,6 +117,13 @@ pub fn main() !u8 {
             .assert_invalid, .assert_malformed => unreachable,
         }
         _ = try t.expect(.RightParen);
+
+        if (parse_fail) {
+            // aha!
+            failures += 1;
+            dbg("\n", .{});
+            continue;
+        }
 
         const res = mod.execute(sym.idx, params.items) catch |err| fail: {
             switch (err) {
