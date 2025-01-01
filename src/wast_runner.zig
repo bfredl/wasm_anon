@@ -67,15 +67,12 @@ pub fn main() !u8 {
         const name_tok = try t.expect(.String);
         const name = try t.simple_string(name_tok);
 
+        params.items.len = 0;
+
         while (try t.expect_maybe(.LeftParen)) |_| {
             const typ = try t.expectAtomChoice(ConstKind);
             const param = try t.expect(.Atom);
-            const value: StackValue = switch (typ) {
-                .@"i32.const" => .{ .i32 = try t.int(i32, param) },
-                .@"i64.const" => .{ .i64 = try t.int(i64, param) },
-                .@"f32.const" => .{ .f32 = try t.float(f32, param) },
-                .@"f64.const" => .{ .f64 = try t.float(f64, param) },
-            };
+            const value: StackValue = try t.as_res(typ, param);
             _ = try t.expect(.RightParen);
             try params.append(value);
         }
@@ -111,49 +108,46 @@ pub fn main() !u8 {
         }
         _ = try t.expect(.RightParen);
 
-        if (mod.execute(sym.idx, params.items)) |res| {
-            if (expected_trap) {
-                dbg("{s}(...): expected trap but got: {}\n", .{ name, res });
-                failures += 1;
-            } else {
-                if (expected_ret) |exp|
-                    switch (expected_type) {
-                        inline else => |ctyp| {
-                            const actual = @field(res, @tagName(ctyp)[0..3]);
-                            const expected = @field(exp, @tagName(ctyp)[0..3]);
+        const res = mod.execute(sym.idx, params.items) catch |err| fail: {
+            switch (err) {
+                error.NotImplemented => {
+                    failures += 1;
+                    continue;
+                },
+                error.WASMTrap => break :fail null,
+                else => |e| return e,
+            }
+        };
 
+        if (!expected_trap) {
+            if (expected_ret) |exp| {
+                switch (expected_type) {
+                    inline else => |ctyp| {
+                        const expected = @field(exp, @tagName(ctyp)[0..3]);
+
+                        if (res) |ok_res| {
+                            const actual = @field(ok_res, @tagName(ctyp)[0..3]);
                             if (actual != expected) {
                                 dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
                                 failures += 1;
                             }
-                        },
-                    };
-            }
-        } else |err| {
-            switch (err) {
-                error.WASMTrap => {
-                    if (!expected_trap) {
-                        if (expected_ret) |exp| {
-                            switch (expected_type) {
-                                inline else => |ctyp| {
-                                    const expected = @field(exp, @tagName(ctyp)[0..3]);
-
-                                    dbg("{s}(...): TRAP, expected: {}\n", .{ name, expected });
-                                },
-                            }
                         } else {
-                            dbg("{s}(...): TRAP, expected ok\n", .{name});
+                            dbg("{s}(...): TRAP, expected: {}\n", .{ name, expected });
                         }
-
-                        failures += 1;
-                    }
-                },
-                error.NotImplemented => {},
-                else => |e| return e,
+                    },
+                }
+            } else {
+                if (res == null) {
+                    dbg("{s}(...): TRAP, expected ok\n", .{name});
+                    failures += 1;
+                }
+            }
+        } else {
+            if (res) |ok_res| {
+                dbg("{s}(...): expected trap but got: {}\n", .{ name, ok_res });
+                failures += 1;
             }
         }
-
-        params.items.len = 0;
     }
 
     dbg("\r{} tests, {} ok, {} fail ({} unapplicable)\n", .{ cases, cases - failures, failures, unapplicable });
