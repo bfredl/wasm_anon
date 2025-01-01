@@ -252,6 +252,7 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         dbg_rt("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, value_stack.items.len, label_stack.items.len });
+        var label_target: ?u32 = null;
         switch (inst) {
             .drop => {
                 _ = value_stack.popOrNull() orelse return error.RuntimeError;
@@ -300,34 +301,27 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                 // target: right after "loop"
                 try label_stack.append(.{ .c_ip = c_ip, .stack_level = @intCast(value_stack.items.len), .n_args = 0 });
             },
-            .br, .br_if => {
+            .br => {
+                label_target = try readu(r);
+            },
+            .br_if => {
                 const idx = try readu(r);
                 if (idx + 1 > label_stack.items.len) return error.RuntimeError;
-                const val = if (inst == .br)
-                    true
-                else
-                    (value_stack.popOrNull() orelse return error.RuntimeError).i32 != 0;
-                if (val) {
-                    label_stack.items.len -= idx;
-                    const last = label_stack.getLastOrNull() orelse return error.RuntimeError;
-                    c_ip = last.c_ip;
-                    r.context.pos = control[c_ip].off;
-                    const new_level = last.stack_level + last.n_args;
-                    if (value_stack.items.len < new_level) @panic("DISASSOCIATING FEAR");
-                    if (value_stack.items.len > new_level) {
-                        const src = value_stack.items.len - last.n_args;
-                        std.mem.copyForwards(StackValue, value_stack.items[last.stack_level..][0..last.n_args], value_stack.items[src..][0..last.n_args]);
-                        value_stack.items.len = new_level;
-                    }
-                    // we don't want to rexec the loop header. however execute the "end"
-                    // target to clean-up the stack.
-                    if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
-                        r.context.pos += 1;
-                        _ = try read.blocktype(r);
-                    } else {
-                        c_ip -= 1; // messy!
-                    }
+                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                if (val.i32 != 0) {
+                    label_target = idx;
                 }
+            },
+            .br_table => {
+                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                const n = try readu(r);
+                var target: ?u32 = null;
+                for (0..n) |i| {
+                    const ival = try readu(r);
+                    if (val.i32 == i) target = ival;
+                }
+                const default = try readu(r);
+                label_target = target orelse default;
             },
             .block => {
                 c_ip += 1;
@@ -419,6 +413,27 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                     },
                 }
             },
+        }
+        if (label_target) |idx| {
+            label_stack.items.len -= idx;
+            const last = label_stack.getLastOrNull() orelse return error.RuntimeError;
+            c_ip = last.c_ip;
+            r.context.pos = control[c_ip].off;
+            const new_level = last.stack_level + last.n_args;
+            if (value_stack.items.len < new_level) @panic("DISASSOCIATING FEAR");
+            if (value_stack.items.len > new_level) {
+                const src = value_stack.items.len - last.n_args;
+                std.mem.copyForwards(StackValue, value_stack.items[last.stack_level..][0..last.n_args], value_stack.items[src..][0..last.n_args]);
+                value_stack.items.len = new_level;
+            }
+            // we don't want to rexec the loop header. however execute the "end"
+            // target to clean-up the stack.
+            if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
+                r.context.pos += 1;
+                _ = try read.blocktype(r);
+            } else {
+                c_ip -= 1; // messy!
+            }
         }
     }
     if (value_stack.items.len < self.n_ret) return error.RuntimeError;
