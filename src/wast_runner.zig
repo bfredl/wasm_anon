@@ -15,6 +15,7 @@ pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
+const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const" };
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -49,7 +50,6 @@ pub fn main() !u8 {
     var params: std.ArrayList(StackValue) = .init(allocator);
 
     const AssertKind = enum { assert_return, assert_trap, assert_invalid, assert_malformed };
-    const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const" };
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
@@ -73,7 +73,8 @@ pub fn main() !u8 {
             const value: StackValue = switch (typ) {
                 .@"i32.const" => .{ .i32 = try t.int(i32, param) },
                 .@"i64.const" => .{ .i64 = try t.int(i64, param) },
-                else => return error.NotImplemented,
+                .@"f32.const" => .{ .f32 = try t.float(f32, param) },
+                .@"f64.const" => .{ .f64 = try t.float(f64, param) },
             };
             _ = try t.expect(.RightParen);
             try params.append(value);
@@ -87,57 +88,69 @@ pub fn main() !u8 {
 
         cases += 1;
 
+        var expected_trap = false;
+        var expected_ret: ?StackValue = null;
+        var expected_type: ConstKind = undefined;
+
         switch (kind) {
             .assert_return => {
-                const result = mod.execute(sym.idx, params.items);
-
                 if (try t.expect_maybe(.LeftParen)) |_| {
                     const typ = try t.expectAtomChoice(ConstKind);
                     const ret = try t.expect(.Atom);
                     _ = try t.expect(.RightParen);
 
-                    switch (typ) {
-                        inline else => |ctyp| {
-                            const expected = switch (ctyp) {
-                                .@"i32.const" => try t.int(i32, ret),
-                                .@"i64.const" => try t.int(i64, ret),
-                                .@"f32.const" => try t.float(f32, ret),
-                                .@"f64.const" => try t.float(f64, ret),
-                            };
-                            if (result) |res| {
-                                const actual = @field(res, @tagName(ctyp)[0..3]);
-                                if (actual != expected) {
-                                    dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
-                                    failures += 1;
-                                }
-                            } else |err| {
-                                failures += 1;
-                                switch (err) {
-                                    error.WASMTrap => dbg("{s}(...): TRAP, expected: {}\n", .{ name, expected }),
-                                    error.NotImplemented => {},
-                                    else => |e| return e,
-                                }
-                            }
-                        },
-                    }
+                    expected_type = typ;
+                    expected_ret = try t.as_res(typ, ret);
                 }
-                _ = try t.expect(.RightParen);
             },
             .assert_trap => {
                 _ = try t.expect(.String);
-                _ = try t.expect(.RightParen);
-                if (mod.execute(sym.idx, params.items)) |res| {
-                    dbg("{s}(...): expected trap but got: {}\n", .{ name, res });
-                    failures += 1;
-                } else |err| {
-                    switch (err) {
-                        error.WASMTrap => {}, // ok
-                        error.NotImplemented => failures += 1,
-                        else => |e| return e,
-                    }
-                }
+                expected_trap = true;
             },
             .assert_invalid, .assert_malformed => unreachable,
+        }
+        _ = try t.expect(.RightParen);
+
+        if (mod.execute(sym.idx, params.items)) |res| {
+            if (expected_trap) {
+                dbg("{s}(...): expected trap but got: {}\n", .{ name, res });
+                failures += 1;
+            } else {
+                if (expected_ret) |exp|
+                    switch (expected_type) {
+                        inline else => |ctyp| {
+                            const actual = @field(res, @tagName(ctyp)[0..3]);
+                            const expected = @field(exp, @tagName(ctyp)[0..3]);
+
+                            if (actual != expected) {
+                                dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
+                                failures += 1;
+                            }
+                        },
+                    };
+            }
+        } else |err| {
+            switch (err) {
+                error.WASMTrap => {
+                    if (!expected_trap) {
+                        if (expected_ret) |exp| {
+                            switch (expected_type) {
+                                inline else => |ctyp| {
+                                    const expected = @field(exp, @tagName(ctyp)[0..3]);
+
+                                    dbg("{s}(...): TRAP, expected: {}\n", .{ name, expected });
+                                },
+                            }
+                        } else {
+                            dbg("{s}(...): TRAP, expected ok\n", .{name});
+                        }
+
+                        failures += 1;
+                    }
+                },
+                error.NotImplemented => {},
+                else => |e| return e,
+            }
         }
 
         params.items.len = 0;
@@ -368,6 +381,15 @@ const Tokenizer = struct {
     fn float(self: *Tokenizer, ftyp: type, t: Token) !ftyp {
         const text = self.rawtext(t);
         return try std.fmt.parseFloat(ftyp, text);
+    }
+
+    fn as_res(self: *Tokenizer, typ: ConstKind, param: Token) !StackValue {
+        return switch (typ) {
+            .@"i32.const" => .{ .i32 = try self.int(i32, param) },
+            .@"i64.const" => .{ .i64 = try self.int(i64, param) },
+            .@"f32.const" => .{ .f32 = try self.float(f32, param) },
+            .@"f64.const" => .{ .f64 = try self.float(f64, param) },
+        };
     }
 };
 
