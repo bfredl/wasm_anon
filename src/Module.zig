@@ -73,6 +73,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             },
             .code => try self.code_section(r),
             .table => try table_section(r),
+            .data => try self.data_section(r),
             else => {}, // try r.skipBytes(len, .{})
         }
 
@@ -193,6 +194,33 @@ pub fn memory_section(r: Reader) !void {
         const lim = try readLimits(r);
         dbg("mem {}:{?}\n", .{ lim.min, lim.max });
     }
+}
+
+pub fn data_section(self: *Module, r: Reader) !void {
+    _ = self;
+    const len = try readu(r);
+    dbg("DATAS: {}\n", .{len});
+    for (0..len) |_| {
+        const typ = try readu(r);
+        dbg("TYP: {}\n", .{typ});
+
+        if (typ > 2 or typ == 1) return error.NotImplemented;
+        const memidx = if (typ == 0) 0 else try readu(r);
+        if (memidx > 0) return error.NotImplemented;
+
+        const offset_typ: defs.OpCode = @enumFromInt(try r.readByte());
+        const offset: u32 = switch (offset_typ) {
+            .i32_const => @bitCast(try read.readLeb(r, i32)),
+            .i64_const => @intCast(try read.readLeb(r, i64)),
+            else => return error.NotImplemented,
+        };
+        if (try r.readByte() != 0x0b) return error.InvalidFormat;
+        const lenna = try readu(r);
+        dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
+
+        r.context.pos += lenna;
+    }
+    @panic("aa");
 }
 
 pub fn global_section(self: *Module, r: Reader) !void {
