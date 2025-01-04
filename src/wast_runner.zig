@@ -43,6 +43,9 @@ pub fn main() !u8 {
     var mod = try wasm_shelf.Module.parse(mod_code, allocator);
     defer mod.deinit();
 
+    var in = try wasm_shelf.Instance.init(&mod);
+    defer in.deinit();
+
     var cases: u32 = 0;
     var failures: u32 = 0;
     var unapplicable: u32 = 0;
@@ -125,7 +128,7 @@ pub fn main() !u8 {
             continue;
         }
 
-        const res = mod.execute(sym.idx, params.items) catch |err| fail: {
+        const res = in.execute(sym.idx, params.items) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
                     failures += 1;

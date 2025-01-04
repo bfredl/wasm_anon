@@ -9,6 +9,7 @@ const std = @import("std");
 const defs = @import("./defs.zig");
 const ops = @import("./ops.zig");
 const Module = @import("./Module.zig");
+const Instance = @import("./Instance.zig");
 const dbg_parse = Module.dbg;
 const severe = std.debug.print;
 const dbg_rt = Module.nodbg;
@@ -211,7 +212,7 @@ pub const StackLabel = struct {
     stack_level: u16,
 };
 
-pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !StackValue {
+pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue) !StackValue {
     if (self.control == null) {
         var fbs2 = mod.fbs_at(self.codeoff);
         const r_parse = fbs2.reader();
@@ -294,6 +295,15 @@ pub fn execute(self: *Function, mod: *Module, params: []const StackValue) !Stack
                 const idx = try readu(r);
                 const val = value_stack.getLastOrNull() orelse return error.RuntimeError;
                 locals[idx] = val;
+            },
+            .global_get => {
+                const idx = try readu(r);
+                try value_stack.append(in.globals[idx]);
+            },
+            .global_set => {
+                const idx = try readu(r);
+                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                in.globals[idx] = val;
             },
             .loop => {
                 c_ip += 1;

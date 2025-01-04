@@ -35,6 +35,8 @@ types: []u32 = undefined,
 export_off: u32 = 0,
 n_globals: u32 = 0,
 
+data_init_size: u32 = 0,
+
 const Function = @import("./Function.zig");
 
 pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream([]const u8) {
@@ -197,7 +199,6 @@ pub fn memory_section(r: Reader) !void {
 }
 
 pub fn data_section(self: *Module, r: Reader) !void {
-    _ = self;
     const len = try readu(r);
     dbg("DATAS: {}\n", .{len});
     for (0..len) |_| {
@@ -217,6 +218,8 @@ pub fn data_section(self: *Module, r: Reader) !void {
         if (try r.readByte() != 0x0b) return error.InvalidFormat;
         const lenna = try readu(r);
         dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
+
+        self.data_init_size = @max(self.data_init_size, offset + lenna);
 
         r.context.pos += lenna;
     }
@@ -255,11 +258,6 @@ pub fn code_section(self: *Module, r: Reader) !void {
         r.context.pos = endpos;
         dbg("\n", .{});
     }
-}
-
-pub fn execute(self: *Module, idx: u32, args: []const Function.StackValue) !Function.StackValue {
-    if (idx >= self.funcs.len) return error.OutOfRange;
-    return self.funcs[idx].execute(self, args);
 }
 
 test "basic functionality" {

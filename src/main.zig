@@ -32,6 +32,9 @@ pub fn main() !void {
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
 
+    var in = try wasm_shelf.Instance.init(&mod);
+    defer in.deinit();
+
     if (argv.len == 3) return usage();
     if (argv.len >= 4) {
         const sym = try mod.lookup_export(std.mem.span(argv[2])) orelse
@@ -41,7 +44,7 @@ pub fn main() !void {
         if (sym.kind != .func) return dbg("not a function :(\n", .{});
 
         const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
-        const res = try mod.execute(sym.idx, &.{.{ .i32 = num }});
+        const res = try in.execute(sym.idx, &.{.{ .i32 = num }});
         dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res.i32 });
     }
 }
