@@ -381,6 +381,16 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 _ = idx;
                 severe("lies!\n", .{});
             },
+            .i32_load8_u => {
+                const alignas = try readu(r);
+                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                const offset = try readu(r);
+                const dst = try top(&value_stack);
+                const ea = @as(u32, @bitCast(dst.i32)) + offset;
+                if (ea + 1 >= in.mem.items.len) return error.WasmTRAP;
+                dbg_parse(" a={} o={}", .{offset});
+                dst.i32 = in.mem.items[ea];
+            },
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 const name = @tagName(tag);
