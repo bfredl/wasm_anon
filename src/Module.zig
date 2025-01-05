@@ -17,8 +17,9 @@ const read = @import("./read.zig");
 const readu = read.readu;
 const readName = read.readName;
 const Reader = read.Reader;
+const Limits = struct { min: u32, max: ?u32 };
 
-fn readLimits(r: Reader) !struct { min: u32, max: ?u32 } {
+fn readLimits(r: Reader) !Limits {
     const kind = try r.readByte();
     const min = try readu(r);
     return .{ .min = min, .max = switch (kind) {
@@ -35,11 +36,12 @@ funcs: []Function = undefined,
 types: []u32 = undefined,
 
 export_off: u32 = 0,
+data_off: u32 = 0,
 
 n_globals: u32 = 0,
 globals_off: u32 = 0,
 
-data_init_size: u32 = 0,
+mem_limits: Limits = .{ .min = 0, .max = null },
 
 const Function = @import("./Function.zig");
 
@@ -70,7 +72,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         switch (kind) {
             .type => try self.type_section(r),
             .function => try self.function_section(r),
-            .memory => try memory_section(r),
+            .memory => try self.memory_section(r),
             .global => try self.global_section(r),
             .import => try import_section(r),
             .export_ => {
@@ -79,7 +81,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             },
             .code => try self.code_section(r),
             .table => try table_section(r),
-            .data => try self.data_section(r),
+            .data => self.data_off = @intCast(fbs.pos),
             else => {}, // try r.skipBytes(len, .{})
         }
 
@@ -193,16 +195,26 @@ fn function_section(self: *Module, r: Reader) !void {
     dbg("...\n", .{});
 }
 
-pub fn memory_section(r: Reader) !void {
+pub fn memory_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("MEMORYS: {}\n", .{len});
-    for (0..len) |_| {
+    for (0..len) |i| {
         const lim = try readLimits(r);
         dbg("mem {}:{?}\n", .{ lim.min, lim.max });
+        if (i == 0) {
+            self.mem_limits = lim;
+        } else {
+            return error.NotImplemented;
+        }
     }
 }
 
-pub fn data_section(self: *Module, r: Reader) !void {
+pub fn init_data(self: *Module, mem: []u8) !void {
+    if (self.data_off == 0) return;
+
+    var fbs = self.fbs_at(self.data_off);
+    const r = fbs.reader();
+
     const len = try readu(r);
     dbg("DATAS: {}\n", .{len});
     for (0..len) |_| {
@@ -223,11 +235,9 @@ pub fn data_section(self: *Module, r: Reader) !void {
         const lenna = try readu(r);
         dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
 
-        self.data_init_size = @max(self.data_init_size, offset + lenna);
-
-        r.context.pos += lenna;
+        if (offset + lenna > mem.len) return error.WASMTrap;
+        try r.readNoEof(mem[offset..][0..lenna]);
     }
-    @panic("aa");
 }
 
 pub fn global_section(self: *Module, r: Reader) !void {

@@ -9,13 +9,17 @@ mem: std.ArrayList(u8),
 globals: []defs.StackValue,
 
 pub fn init(mod: *Module) !Instance {
-    const self = Instance{
+    var self = Instance{
         .mod = mod,
         .mem = .init(mod.allocator),
         .globals = try mod.allocator.alloc(defs.StackValue, mod.n_globals),
     };
 
     try mod.init_globals(self.globals);
+    if (mod.mem_limits.min > 0) {
+        try self.mem.appendNTimes(0, 0x10000 * mod.mem_limits.min);
+    }
+    try mod.init_data(self.mem.items);
     return self;
 }
 
