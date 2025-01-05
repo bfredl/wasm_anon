@@ -121,13 +121,11 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
                 dbg_parse(" {}", .{val});
             },
             .f32_const => {
-                const ival = try r.readInt(u32, .little);
-                const val: f32 = @bitCast(ival);
+                const val = try read.readf(r, f32);
                 dbg_parse(" {}", .{val});
             },
             .f64_const => {
-                const ival = try r.readInt(u64, .little);
-                const val: f64 = @bitCast(ival);
+                const val = try read.readf(r, f64);
                 dbg_parse(" {}", .{val});
             },
             .local_get, .local_set, .local_tee => {
@@ -198,13 +196,7 @@ fn u(val: i32) u32 {
     return @bitCast(val);
 }
 
-// type punning is NOT safe, this assumes validaded WASM code
-pub const StackValue = extern union {
-    i32: i32,
-    i64: i64,
-    f32: f32,
-    f64: f64,
-};
+const StackValue = defs.StackValue;
 
 pub const StackLabel = struct {
     c_ip: u32,
@@ -267,12 +259,12 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 try value_stack.append(.{ .i64 = val });
             },
             .f32_const => {
-                const ival = try r.readInt(u32, .little);
-                try value_stack.append(.{ .f32 = @bitCast(ival) });
+                const val = try read.readf(r, f32);
+                try value_stack.append(.{ .f32 = val });
             },
             .f64_const => {
-                const ival = try r.readInt(u64, .little);
-                try value_stack.append(.{ .f64 = @bitCast(ival) });
+                const val = try read.readf(r, f64);
+                try value_stack.append(.{ .f64 = val });
             },
             .i32_eqz => {
                 const dst = try top(&value_stack);

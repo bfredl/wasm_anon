@@ -15,7 +15,7 @@ pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
-const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const" };
+const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const", @"ref.null" };
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -403,6 +403,7 @@ const Tokenizer = struct {
             .@"i64.const" => .{ .i64 = try self.int(i64, param) },
             .@"f32.const" => .{ .f32 = try self.float(f32, param) },
             .@"f64.const" => .{ .f64 = try self.float(f64, param) },
+            .@"ref.null" => .{ .ref = if (std.mem.eql(u8, self.rawtext(param), "extern")) 0 else return error.NotImplemented },
         };
     }
 };

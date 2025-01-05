@@ -1,3 +1,12 @@
+// type punning is NOT safe, this assumes validaded WASM code
+pub const StackValue = extern union {
+    i32: i32,
+    i64: i64,
+    f32: f32,
+    f64: f64,
+    ref: u32,
+};
+
 pub const SectionKind = enum(u8) {
     custom = 0,
     type = 1,

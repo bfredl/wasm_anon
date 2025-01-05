@@ -13,6 +13,11 @@ pub fn readu(r: Reader) !u32 {
     return readLeb(r, u32);
 }
 
+pub fn readf(r: Reader, comptime T: type) !T {
+    const ival = try r.readInt(if (T == f32) u32 else u64, .little);
+    return @bitCast(ival);
+}
+
 pub fn readName(r: Reader) ![]const u8 {
     const len = try readu(r);
     const str = r.context.buffer[r.context.pos..][0..len];

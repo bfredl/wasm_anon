@@ -8,6 +8,8 @@ pub fn nodbg(str: anytype, vals: anytype) void {
     _ = vals;
 }
 
+const severe = std.debug.print;
+
 const defs = @import("./defs.zig");
 const Module = @This();
 
@@ -33,7 +35,9 @@ funcs: []Function = undefined,
 types: []u32 = undefined,
 
 export_off: u32 = 0,
+
 n_globals: u32 = 0,
+globals_off: u32 = 0,
 
 data_init_size: u32 = 0,
 
@@ -230,7 +234,28 @@ pub fn global_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("GLOBALS: {}\n", .{len});
     self.n_globals = len;
-    dbg("tbd...\n", .{});
+    self.globals_off = @intCast(r.context.pos);
+}
+
+pub fn init_globals(self: *Module, globals: []defs.StackValue) !void {
+    var fbs = self.fbs_at(self.globals_off);
+    const r = fbs.reader();
+
+    for (0..self.n_globals) |i| {
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
+        const init_typ: defs.OpCode = @enumFromInt(try r.readByte());
+        _ = typ; // WE GET THE TYPE TWICE, THANKS OBAMA
+        severe("TYPEN: {}\n\n", .{init_typ});
+        switch (init_typ) {
+            .i32_const => globals[i].i32 = try read.readLeb(r, i32),
+            .i64_const => globals[i].i64 = try read.readLeb(r, i64),
+            .f32_const => globals[i].f32 = try read.readf(r, f32),
+            .f64_const => globals[i].f64 = try read.readf(r, f64),
+            else => return error.NotImplemented,
+        }
+        if (try r.readByte() != 0x0b) return error.InvalidFormat;
+    }
 }
 
 pub fn table_section(r: Reader) !void {
