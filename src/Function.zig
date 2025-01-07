@@ -419,6 +419,29 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                         const dst, const src = try pop_binop(&value_stack);
                         dst.i32 = if (@field(ops.irelop, name[4..])(i64, dst.i64, src.i64)) 1 else 0;
                     },
+                    .load_simple => {
+                        const alignas = try readu(r);
+                        _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                        const offset = try readu(r);
+                        const dst = try top(&value_stack);
+                        const ea = @as(u32, @bitCast(dst.i32)) + offset;
+                        const typname = name[0..3];
+                        const typ = @FieldType(StackValue, typname);
+                        if (ea + @sizeOf(typ) >= in.mem.items.len) return error.WasmTRAP;
+                        @memcpy(std.mem.asBytes(&@field(dst.*, typname)), in.mem.items[ea..][0..@sizeOf(typ)]);
+                    },
+                    .store_simple => {
+                        const alignas = try readu(r);
+                        _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                        const offset = try readu(r);
+                        const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                        const dst = value_stack.popOrNull() orelse return error.RuntimeError;
+                        const ea = @as(u32, @bitCast(dst.i32)) + offset;
+                        const typname = name[0..3];
+                        const typ = @FieldType(StackValue, typname);
+                        if (ea + @sizeOf(typ) >= in.mem.items.len) return error.WasmTRAP;
+                        @memcpy(in.mem.items[ea..][0..@sizeOf(typ)], std.mem.asBytes(&@field(val, typname)));
+                    },
                     .other => {
                         severe("{}: {s}\n", .{ pos, @tagName(inst) });
                         return error.NotImplemented;
