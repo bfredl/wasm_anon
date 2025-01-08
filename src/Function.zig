@@ -189,13 +189,13 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
 // This assumes that repeated instantiation of the same module with complex initializers is rare,
 // i e you would likely use "start" or call to a real function with actual locals. Thus we don't save
 // these parsed pseudo-functions
-pub fn eval_expr(mod: *Module, in: *Instance, r: *Reader, typ: defs.ValType) StackValue {
+pub fn eval_expr(mod: *Module, r: Reader, typ: defs.ValType) !StackValue {
     const savepos = r.context.pos;
     // shortcut: `expr` is just "i??.const VAL end"
     quick_try: {
         const init_typ: defs.OpCode = @enumFromInt(try r.readByte());
         _ = typ;
-        const val = switch (init_typ) {
+        const val: StackValue = switch (init_typ) {
             .i32_const => .{ .i32 = try read.readLeb(r, i32) },
             .i64_const => .{ .i64 = try read.readLeb(r, i64) },
             .f32_const => .{ .f32 = try read.readf(r, f32) },
@@ -205,13 +205,16 @@ pub fn eval_expr(mod: *Module, in: *Instance, r: *Reader, typ: defs.ValType) Sta
         if (try r.readByte() != 0x0b) break :quick_try;
         return val;
     }
+    if (true) return error.NotImplemented;
+
     r.context.pos = savepos;
 
     var self: Function = .{ .n_params = 0, .n_ret = 1, .codeoff = savepos };
     self.parse_body(mod, r, 0);
     defer self.deinit();
 
-    return self.execute(mod, in, &.{}, true);
+    const init_in: *Instance = undefined;
+    return self.execute(mod, init_in, &.{}, true);
 }
 
 pub fn top(stack: *std.ArrayList(StackValue)) !*StackValue {

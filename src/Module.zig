@@ -225,13 +225,7 @@ pub fn init_data(self: *Module, mem: []u8) !void {
         const memidx = if (typ == 0) 0 else try readu(r);
         if (memidx > 0) return error.NotImplemented;
 
-        const offset_typ: defs.OpCode = @enumFromInt(try r.readByte());
-        const offset: u32 = switch (offset_typ) {
-            .i32_const => @bitCast(try read.readLeb(r, i32)),
-            .i64_const => @intCast(try read.readLeb(r, i64)),
-            else => return error.NotImplemented,
-        };
-        if (try r.readByte() != 0x0b) return error.InvalidFormat;
+        const offset: usize = @intCast((try Function.eval_expr(self, r, .i32)).i32);
         const lenna = try readu(r);
         dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
 
@@ -255,17 +249,7 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue) !void {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
-        const init_typ: defs.OpCode = @enumFromInt(try r.readByte());
-        _ = typ; // WE GET THE TYPE TWICE, THANKS OBAMA
-        severe("TYPEN: {}\n\n", .{init_typ});
-        switch (init_typ) {
-            .i32_const => globals[i].i32 = try read.readLeb(r, i32),
-            .i64_const => globals[i].i64 = try read.readLeb(r, i64),
-            .f32_const => globals[i].f32 = try read.readf(r, f32),
-            .f64_const => globals[i].f64 = try read.readf(r, f64),
-            else => return error.NotImplemented,
-        }
-        if (try r.readByte() != 0x0b) return error.InvalidFormat;
+        globals[i] = try Function.eval_expr(self, r, typ);
     }
 }
 
