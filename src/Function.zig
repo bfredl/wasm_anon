@@ -49,6 +49,10 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
     }
     dbg_parse("\n", .{});
 
+    try self.parse_body(mod, r, n_locals);
+}
+
+pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void {
     var level: u32 = 1;
 
     var clist: std.ArrayList(ControlItem) = .init(mod.allocator);
@@ -181,6 +185,35 @@ pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
     self.control = try clist.toOwnedSlice();
 }
 
+// evaluate expression at "off". This is like a function body but without locals for some reason
+// This assumes that repeated instantiation of the same module with complex initializers is rare,
+// i e you would likely use "start" or call to a real function with actual locals. Thus we don't save
+// these parsed pseudo-functions
+pub fn eval_expr(mod: *Module, in: *Instance, r: *Reader, typ: defs.ValType) StackValue {
+    const savepos = r.context.pos;
+    // shortcut: `expr` is just "i??.const VAL end"
+    quick_try: {
+        const init_typ: defs.OpCode = @enumFromInt(try r.readByte());
+        _ = typ;
+        const val = switch (init_typ) {
+            .i32_const => .{ .i32 = try read.readLeb(r, i32) },
+            .i64_const => .{ .i64 = try read.readLeb(r, i64) },
+            .f32_const => .{ .f32 = try read.readf(r, f32) },
+            .f64_const => .{ .f64 = try read.readf(r, f64) },
+            else => break :quick_try,
+        };
+        if (try r.readByte() != 0x0b) break :quick_try;
+        return val;
+    }
+    r.context.pos = savepos;
+
+    var self: Function = .{ .n_params = 0, .n_ret = 1, .codeoff = savepos };
+    self.parse_body(mod, r, 0);
+    defer self.deinit();
+
+    return self.execute(mod, in, &.{}, true);
+}
+
 pub fn top(stack: *std.ArrayList(StackValue)) !*StackValue {
     if (stack.items.len < 1) return error.RuntimeError;
     return &stack.items[stack.items.len - 1];
@@ -204,7 +237,7 @@ pub const StackLabel = struct {
     stack_level: u16,
 };
 
-pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue) !StackValue {
+pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
     if (self.control == null) {
         var fbs2 = mod.fbs_at(self.codeoff);
         const r_parse = fbs2.reader();
@@ -220,8 +253,8 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
 
     const control = self.control orelse @panic("how could you");
 
-    var n_locals: u32 = 1; // TODO
-    const n_local_defs = try readu(r);
+    var n_locals: u32 = self.n_params;
+    const n_local_defs = if (skip_locals) 0 else try readu(r);
     for (0..n_local_defs) |_| {
         const n_decl = try readu(r);
         const typ: defs.ValType = @enumFromInt(try r.readByte());

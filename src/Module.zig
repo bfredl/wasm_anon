@@ -254,6 +254,7 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue) !void {
     for (0..self.n_globals) |i| {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
+
         const init_typ: defs.OpCode = @enumFromInt(try r.readByte());
         _ = typ; // WE GET THE TYPE TWICE, THANKS OBAMA
         severe("TYPEN: {}\n\n", .{init_typ});

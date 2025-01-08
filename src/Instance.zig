@@ -30,5 +30,5 @@ pub fn deinit(self: *Instance) void {
 
 pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue) !defs.StackValue {
     if (idx >= self.mod.funcs.len) return error.OutOfRange;
-    return self.mod.funcs[idx].execute(self.mod, self, args);
+    return self.mod.funcs[idx].execute(self.mod, self, args, false);
 }
