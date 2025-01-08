@@ -107,6 +107,7 @@ pub const OpCode = enum(u8) {
     i64_store8 = 0x3C,
     i64_store16 = 0x3D,
     i64_store32 = 0x3E,
+
     memory_size = 0x3F,
     memory_grow = 0x40,
 
@@ -258,6 +259,36 @@ pub const OpCode = enum(u8) {
     prefixed = 0xFC,
 };
 
+pub fn memtype(comptime op: OpCode) type {
+    return switch (op) {
+        .i32_load => i32,
+        .i64_load => i64,
+        .f32_load => f32,
+        .f64_load => f64,
+        .i32_load8_s => i8,
+        .i32_load8_u => u8,
+        .i32_load16_s => i16,
+        .i32_load16_u => u16,
+        .i64_load8_s => i8,
+        .i64_load8_u => u8,
+        .i64_load16_s => i16,
+        .i64_load16_u => u16,
+        .i64_load32_s => i32,
+        .i64_load32_u => u32,
+
+        .i32_store => i32,
+        .i64_store => i64,
+        .f32_store => f32,
+        .f64_store => f64,
+        .i32_store8 => i8,
+        .i32_store16 => i16,
+        .i64_store8 => i8,
+        .i64_store16 => i16,
+        .i64_store32 => i32,
+        else => unreachable,
+    };
+}
+
 pub const Category = enum {
     i32_unop,
     i32_binop,
@@ -265,16 +296,16 @@ pub const Category = enum {
     i64_unop,
     i64_binop,
     i64_relop,
-    load_simple,
-    store_simple,
+    load,
+    store,
     other,
 };
 
 // to start with this is only used at comptime
 pub fn category(op: OpCode) Category {
     const numval = @intFromEnum(op);
-    if (numval >= 0x28 and numval <= 0x2B) return .load_simple;
-    if (numval >= 0x36 and numval <= 0x39) return .store_simple;
+    if (numval >= 0x28 and numval <= 0x35) return .load;
+    if (numval >= 0x36 and numval <= 0x3E) return .store;
     if (numval >= 0x46 and numval <= 0x4F) return .i32_relop;
     if (numval >= 0x51 and numval <= 0x5A) return .i64_relop;
     if (numval >= 0x67 and numval <= 0x69) return .i32_unop;

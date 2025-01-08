@@ -381,16 +381,6 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 _ = idx;
                 severe("lies!\n", .{});
             },
-            .i32_load8_u => {
-                const alignas = try readu(r);
-                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                const offset = try readu(r);
-                const dst = try top(&value_stack);
-                const ea = @as(u32, @bitCast(dst.i32)) + offset;
-                if (ea + 1 >= in.mem.items.len) return error.WasmTRAP;
-                dbg_parse(" a={} o={}", .{offset});
-                dst.i32 = in.mem.items[ea];
-            },
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 const name = @tagName(tag);
@@ -419,28 +409,30 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                         const dst, const src = try pop_binop(&value_stack);
                         dst.i32 = if (@field(ops.irelop, name[4..])(i64, dst.i64, src.i64)) 1 else 0;
                     },
-                    .load_simple => {
+                    .load => {
                         const alignas = try readu(r);
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                         const offset = try readu(r);
                         const dst = try top(&value_stack);
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
-                        const typname = name[0..3];
-                        const typ = @FieldType(StackValue, typname);
-                        if (ea + @sizeOf(typ) >= in.mem.items.len) return error.WasmTRAP;
-                        @memcpy(std.mem.asBytes(&@field(dst.*, typname)), in.mem.items[ea..][0..@sizeOf(typ)]);
+                        const memtype = defs.memtype(tag);
+                        if (ea + @sizeOf(memtype) >= in.mem.items.len) return error.WasmTRAP;
+                        var foo: memtype = undefined;
+                        @memcpy(std.mem.asBytes(&foo), in.mem.items[ea..][0..@sizeOf(memtype)]);
+                        @field(dst, name[0..3]) = foo;
                     },
-                    .store_simple => {
+                    .store => {
                         const alignas = try readu(r);
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                         const offset = try readu(r);
                         const val = value_stack.popOrNull() orelse return error.RuntimeError;
                         const dst = value_stack.popOrNull() orelse return error.RuntimeError;
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
-                        const typname = name[0..3];
-                        const typ = @FieldType(StackValue, typname);
-                        if (ea + @sizeOf(typ) >= in.mem.items.len) return error.WasmTRAP;
-                        @memcpy(in.mem.items[ea..][0..@sizeOf(typ)], std.mem.asBytes(&@field(val, typname)));
+                        const memtype = defs.memtype(tag);
+                        if (ea + @sizeOf(memtype) >= in.mem.items.len) return error.WasmTRAP;
+                        const src = @field(val, name[0..3]);
+                        const foo: memtype = if (@typeInfo(memtype) == .int) @truncate(src) else src;
+                        @memcpy(in.mem.items[ea..][0..@sizeOf(memtype)], std.mem.asBytes(&foo));
                     },
                     .other => {
                         severe("{}: {s}\n", .{ pos, @tagName(inst) });
