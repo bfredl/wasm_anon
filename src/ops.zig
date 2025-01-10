@@ -116,3 +116,51 @@ pub const iunop = struct {
         return @as(i32, @truncate(val));
     }
 };
+
+pub const fbinop = struct {
+    pub fn add(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return lhs + rhs;
+    }
+    pub fn sub(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return lhs - rhs;
+    }
+    pub fn mul(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return lhs * rhs;
+    }
+    pub fn div(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return lhs / rhs;
+    }
+    pub fn min(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return @min(lhs, rhs);
+    }
+    pub fn max(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return @max(lhs, rhs);
+    }
+    pub fn copysign(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        return lhs * @abs(rhs);
+    }
+};
+
+pub const funop = struct {
+    pub fn abs(comptime t: type, val: t) WASMError!t {
+        return @abs(val);
+    }
+    pub fn neg(comptime t: type, val: t) WASMError!t {
+        return -val;
+    }
+    pub fn ceil(comptime t: type, val: t) WASMError!t {
+        return @ceil(val);
+    }
+    pub fn floor(comptime t: type, val: t) WASMError!t {
+        return @floor(val);
+    }
+    pub fn trunc(comptime t: type, val: t) WASMError!t {
+        return @trunc(val);
+    }
+    pub fn nearest(comptime t: type, val: t) WASMError!t {
+        return @round(val);
+    }
+    pub fn sqrt(comptime t: type, val: t) WASMError!t {
+        return @sqrt(val);
+    }
+};
