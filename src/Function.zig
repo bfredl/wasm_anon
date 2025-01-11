@@ -217,17 +217,6 @@ pub fn eval_expr(mod: *Module, r: Reader, typ: defs.ValType) !StackValue {
     return self.execute(mod, init_in, &.{}, true);
 }
 
-pub fn top(stack: *std.ArrayList(StackValue)) !*StackValue {
-    if (stack.items.len < 1) return error.RuntimeError;
-    return &stack.items[stack.items.len - 1];
-}
-
-pub fn pop_binop(stack: *std.ArrayList(StackValue)) !struct { *StackValue, StackValue } {
-    if (stack.items.len < 2) return error.RuntimeError;
-    const src = stack.pop();
-    return .{ &stack.items[stack.items.len - 1], src };
-}
-
 fn u(val: i32) u32 {
     return @bitCast(val);
 }
@@ -236,8 +225,64 @@ const StackValue = defs.StackValue;
 
 pub const StackLabel = struct {
     c_ip: u32,
-    n_args: u16,
+    n_vals: u16,
     stack_level: u16,
+};
+
+pub const StackMachine = struct {
+    values: std.ArrayList(StackValue),
+    labels: std.ArrayList(StackLabel),
+
+    pub fn init(allocator: std.mem.Allocator) StackMachine {
+        return .{
+            .values = .init(allocator),
+            .labels = .init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *StackMachine) void {
+        self.values.deinit();
+        self.labels.deinit();
+    }
+
+    pub fn push(self: *StackMachine, value: StackValue) !void {
+        try self.values.append(value);
+    }
+
+    pub fn pop(self: *StackMachine) !StackValue {
+        return self.values.popOrNull() orelse return error.RuntimeError;
+    }
+
+    pub fn push_label(self: *StackMachine, c_ip: u32, n_vals: u16) !void {
+        try self.labels.append(.{ .c_ip = c_ip, .stack_level = @intCast(self.values.items.len), .n_vals = n_vals });
+    }
+
+    pub fn top(self: *StackMachine) !*StackValue {
+        const stack = &self.values;
+        if (stack.items.len < 1) return error.RuntimeError;
+        return &stack.items[stack.items.len - 1];
+    }
+
+    pub fn pop_binop(self: *StackMachine) !struct { *StackValue, StackValue } {
+        const stack = &self.values;
+        if (stack.items.len < 2) return error.RuntimeError;
+        const src = stack.pop();
+        return .{ &stack.items[stack.items.len - 1], src };
+    }
+
+    pub fn pop_and_jump_labels(self: *StackMachine, levels: u32) !u32 {
+        self.labels.items.len -= levels;
+        const last = self.labels.getLastOrNull() orelse return error.RuntimeError;
+        const c_ip = last.c_ip;
+        const new_level = last.stack_level + last.n_vals;
+        if (self.values.items.len < new_level) @panic("DISASSOCIATING FEAR");
+        if (self.values.items.len > new_level) {
+            const src = self.values.items.len - last.n_vals;
+            std.mem.copyForwards(StackValue, self.values.items[last.stack_level..][0..last.n_vals], self.values.items[src..][0..last.n_vals]);
+            self.values.items.len = new_level;
+        }
+        return c_ip;
+    }
 };
 
 pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
@@ -266,92 +311,90 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
     }
     if (n_locals > 10) return error.NotImplemented;
 
-    var value_stack: std.ArrayList(StackValue) = .init(mod.allocator);
-    defer value_stack.deinit();
-    var label_stack: std.ArrayList(StackLabel) = .init(mod.allocator);
-    defer label_stack.deinit();
+    var stack: StackMachine = .init(mod.allocator);
+    defer stack.deinit();
 
     var c_ip: u32 = 0;
 
     // entire body is implicitly a block, producing the return values
-    try label_stack.append(.{ .c_ip = @intCast(control.len - 1), .stack_level = 0, .n_args = @intCast(self.n_ret) });
+    try stack.push_label(@intCast(control.len - 1), @intCast(self.n_ret));
 
     // fbs.pos is the insruction pointer which is a bit weird but works
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
-        dbg_rt("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, value_stack.items.len, label_stack.items.len });
+        dbg_rt("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, stack.values.items.len, stack.labels.items.len });
         var label_target: ?u32 = null;
         switch (inst) {
             .drop => {
-                _ = value_stack.popOrNull() orelse return error.RuntimeError;
+                _ = try stack.pop();
             },
             .i32_const => {
                 const val = try readLeb(r, i32);
-                try value_stack.append(.{ .i32 = val });
+                try stack.push(.{ .i32 = val });
             },
             .i64_const => {
                 const val = try readLeb(r, i64);
-                try value_stack.append(.{ .i64 = val });
+                try stack.push(.{ .i64 = val });
             },
             .f32_const => {
                 const val = try read.readf(r, f32);
-                try value_stack.append(.{ .f32 = val });
+                try stack.push(.{ .f32 = val });
             },
             .f64_const => {
                 const val = try read.readf(r, f64);
-                try value_stack.append(.{ .f64 = val });
+                try stack.push(.{ .f64 = val });
             },
             .i32_eqz => {
-                const dst = try top(&value_stack);
+                const dst = try stack.top();
                 dst.i32 = if (dst.i32 == 0) 1 else 0;
             },
             .i64_eqz => {
-                const dst = try top(&value_stack);
+                const dst = try stack.top();
                 dst.i32 = if (dst.i64 == 0) 1 else 0;
             },
             .local_get => {
                 const idx = try readu(r);
-                try value_stack.append(locals[idx]);
+                try stack.push(locals[idx]);
             },
             .local_set => {
                 const idx = try readu(r);
-                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                const val = try stack.pop();
                 locals[idx] = val;
             },
             .local_tee => {
                 const idx = try readu(r);
-                const val = value_stack.getLastOrNull() orelse return error.RuntimeError;
-                locals[idx] = val;
+                const val = try stack.top();
+                locals[idx] = val.*;
             },
             .global_get => {
                 const idx = try readu(r);
-                try value_stack.append(in.globals[idx]);
+                try stack.push(in.globals[idx]);
             },
             .global_set => {
                 const idx = try readu(r);
-                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                const val = try stack.pop();
                 in.globals[idx] = val;
             },
             .loop => {
                 c_ip += 1;
                 _ = try read.blocktype(r);
                 // target: right after "loop"
-                try label_stack.append(.{ .c_ip = c_ip, .stack_level = @intCast(value_stack.items.len), .n_args = 0 });
+                try stack.push_label(c_ip, 0);
             },
             .br => {
                 label_target = try readu(r);
             },
             .br_if => {
                 const idx = try readu(r);
-                if (idx + 1 > label_stack.items.len) return error.RuntimeError;
-                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                if (idx + 1 > stack.labels.items.len) return error.RuntimeError;
+                const val = try stack.pop();
                 if (val.i32 != 0) {
                     label_target = idx;
                 }
             },
             .br_table => {
-                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                const val = try stack.pop();
                 const n = try readu(r);
                 var target: ?u32 = null;
                 for (0..n) |i| {
@@ -367,22 +410,22 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 const n_results = try typ.results();
                 // target: right after "loop"
                 if (control[c_ip].off != pos) @panic("MANIC FEAR");
-                try label_stack.append(.{ .c_ip = control[c_ip].jmp_t, .stack_level = @intCast(value_stack.items.len), .n_args = n_results });
+                try stack.push_label(control[c_ip].jmp_t, n_results);
             },
             .if_ => {
                 c_ip += 1;
                 const typ = try read.blocktype(r);
                 const n_results = try typ.results();
                 if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
-                const val = value_stack.popOrNull() orelse return error.RuntimeError;
+                const val = try stack.pop();
                 if (val.i32 != 0) {
-                    try label_stack.append(.{ .c_ip = control[c_ip].jmp_t, .stack_level = @intCast(value_stack.items.len), .n_args = n_results }); // we worry about else vs end when we get there..
+                    try stack.push_label(control[c_ip].jmp_t, n_results); // we worry about else vs end when we get there..
                 } else {
                     c_ip = control[c_ip].jmp_t;
                     r.context.pos = control[c_ip].off;
                     const c_inst: defs.OpCode = @enumFromInt(try r.readByte());
                     if (c_inst == .else_) {
-                        try label_stack.append(.{ .c_ip = control[c_ip].jmp_t, .stack_level = @intCast(value_stack.items.len), .n_args = n_results });
+                        try stack.push_label(control[c_ip].jmp_t, n_results);
                     } else {
                         if (c_inst != .end) @panic("SCREAMING FEAR");
                         // we already skipped over the "end"
@@ -396,16 +439,17 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 c_ip = control[c_ip].jmp_t;
                 // execute the end inline
                 r.context.pos = control[c_ip].off + 1;
-                _ = label_stack.popOrNull() orelse break;
+                // TODO: MYSKO
+                _ = stack.labels.popOrNull() orelse break;
             },
             .end => {
                 c_ip += 1;
                 if (control[c_ip].off != pos) @panic("PANIKED FEAR");
-                _ = label_stack.popOrNull() orelse @panic("RUSHED FEAR");
+                _ = stack.labels.popOrNull() orelse @panic("RUSHED FEAR");
                 // todo: cannot do this if we popped a "loop" header
-                // if (value_stack.items.len != item.stack_level + item.n_args) @panic("SAD FEAR");
-                if (label_stack.items.len == 0) {
-                    if (value_stack.items.len != self.n_ret) return error.RuntimeError;
+                // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
+                if (stack.labels.items.len == 0) {
+                    if (stack.values.items.len != self.n_ret) return error.RuntimeError;
                     break;
                 }
             },
@@ -422,54 +466,54 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 const name = @tagName(tag);
                 switch (category) {
                     .i32_unop => {
-                        const dst = try top(&value_stack);
+                        const dst = try stack.top();
                         dst.i32 = @field(ops.iunop, name[4..])(i32, dst.i32);
                     },
                     .i32_binop => {
-                        const dst, const src = try pop_binop(&value_stack);
+                        const dst, const src = try stack.pop_binop();
                         dst.i32 = try @field(ops.ibinop, name[4..])(i32, dst.i32, src.i32);
                     },
                     .i32_relop => {
-                        const dst, const src = try pop_binop(&value_stack);
+                        const dst, const src = try stack.pop_binop();
                         dst.i32 = if (@field(ops.irelop, name[4..])(i32, dst.i32, src.i32)) 1 else 0;
                     },
                     .i64_unop => {
-                        const dst = try top(&value_stack);
+                        const dst = try stack.top();
                         dst.i64 = @field(ops.iunop, name[4..])(i64, dst.i64);
                     },
                     .i64_binop => {
-                        const dst, const src = try pop_binop(&value_stack);
+                        const dst, const src = try stack.pop_binop();
                         dst.i64 = try @field(ops.ibinop, name[4..])(i64, dst.i64, src.i64);
                     },
                     .i64_relop => {
-                        const dst, const src = try pop_binop(&value_stack);
+                        const dst, const src = try stack.pop_binop();
                         dst.i32 = if (@field(ops.irelop, name[4..])(i64, dst.i64, src.i64)) 1 else 0;
                     },
                     .f32_unop => {
-                        const dst = try top(&value_stack);
+                        const dst = try stack.top();
                         dst.f32 = try @field(ops.funop, name[4..])(f32, dst.f32);
                     },
                     .f32_binop => {
-                        const dst, const src = try pop_binop(&value_stack);
+                        const dst, const src = try stack.pop_binop();
                         dst.f32 = try @field(ops.fbinop, name[4..])(f32, dst.f32, src.f32);
                     },
                     .f64_unop => {
-                        const dst = try top(&value_stack);
+                        const dst = try stack.top();
                         dst.f64 = try @field(ops.funop, name[4..])(f64, dst.f64);
                     },
                     .f64_binop => {
-                        const dst, const src = try pop_binop(&value_stack);
+                        const dst, const src = try stack.pop_binop();
                         dst.f64 = try @field(ops.fbinop, name[4..])(f64, dst.f64, src.f64);
                     },
                     .convert => {
-                        const dst = try top(&value_stack);
+                        const dst = try stack.top();
                         dst.* = try @field(ops.convert, name)(dst.*);
                     },
                     .load => {
                         const alignas = try readu(r);
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                         const offset = try readu(r);
-                        const dst = try top(&value_stack);
+                        const dst = try stack.top();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
                         const memtype = defs.memtype(tag);
                         if (ea + @sizeOf(memtype) >= in.mem.items.len) return error.WasmTRAP;
@@ -481,8 +525,8 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                         const alignas = try readu(r);
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                         const offset = try readu(r);
-                        const val = value_stack.popOrNull() orelse return error.RuntimeError;
-                        const dst = value_stack.popOrNull() orelse return error.RuntimeError;
+                        const val = try stack.pop();
+                        const dst = try stack.pop();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
                         const memtype = defs.memtype(tag);
                         if (ea + @sizeOf(memtype) >= in.mem.items.len) return error.WasmTRAP;
@@ -498,17 +542,9 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
             },
         }
         if (label_target) |idx| {
-            label_stack.items.len -= idx;
-            const last = label_stack.getLastOrNull() orelse return error.RuntimeError;
-            c_ip = last.c_ip;
+            c_ip = try stack.pop_and_jump_labels(idx);
             r.context.pos = control[c_ip].off;
-            const new_level = last.stack_level + last.n_args;
-            if (value_stack.items.len < new_level) @panic("DISASSOCIATING FEAR");
-            if (value_stack.items.len > new_level) {
-                const src = value_stack.items.len - last.n_args;
-                std.mem.copyForwards(StackValue, value_stack.items[last.stack_level..][0..last.n_args], value_stack.items[src..][0..last.n_args]);
-                value_stack.items.len = new_level;
-            }
+
             // we don't want to rexec the loop header. however execute the "end"
             // target to clean-up the stack.
             if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
@@ -519,7 +555,7 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
             }
         }
     }
-    if (value_stack.items.len < self.n_ret) return error.RuntimeError;
+    if (stack.values.items.len < self.n_ret) return error.RuntimeError;
 
-    return if (self.n_ret > 0) value_stack.items[value_stack.items.len - 1] else .{ .i32 = 0x4EADBEAF };
+    return if (self.n_ret > 0) stack.values.items[stack.values.items.len - 1] else .{ .i32 = 0x4EADBEAF };
 }
