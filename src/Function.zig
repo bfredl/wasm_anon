@@ -461,6 +461,10 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                         const dst, const src = try pop_binop(&value_stack);
                         dst.f64 = try @field(ops.fbinop, name[4..])(f64, dst.f64, src.f64);
                     },
+                    .convert => {
+                        const dst = try top(&value_stack);
+                        dst.* = try @field(ops.convert, name)(dst.*);
+                    },
                     .load => {
                         const alignas = try readu(r);
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."

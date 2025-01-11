@@ -302,6 +302,7 @@ pub const Category = enum {
     f32_binop,
     f64_unop,
     f64_binop,
+    convert,
     load,
     store,
     other,
@@ -322,6 +323,7 @@ pub fn category(comptime op: OpCode) Category {
     if (numval >= 0x92 and numval <= 0x98) return .f32_binop;
     if (numval >= 0x99 and numval <= 0x9F) return .f64_unop;
     if (numval >= 0xA0 and numval <= 0xA6) return .f64_binop;
+    if (numval >= 0xA7 and numval <= 0xA8) return .convert;
     if (numval >= 0xC0 and numval <= 0xC1) return .i32_unop;
     if (numval >= 0xC2 and numval <= 0xC4) return .i64_unop;
     return .other;

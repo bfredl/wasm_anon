@@ -1,5 +1,6 @@
 const WASMError = error{WASMTrap};
 const std = @import("std");
+const StackValue = @import("./defs.zig").StackValue;
 
 fn utype(comptime t: type) type {
     return if (t == i32) u32 else if (t == i64) u64 else unreachable;
@@ -163,5 +164,14 @@ pub const funop = struct {
     }
     pub fn sqrt(comptime t: type, val: t) WASMError!t {
         return @sqrt(val);
+    }
+};
+
+pub const convert = struct {
+    pub fn i32_wrap_i64(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = @truncate(val.i64) };
+    }
+    pub fn i32_trunc_f32_s(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = @intFromFloat(val.f32) };
     }
 };
