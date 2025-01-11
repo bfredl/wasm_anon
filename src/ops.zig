@@ -158,6 +158,7 @@ pub const funop = struct {
         return @trunc(val);
     }
     pub fn nearest(comptime t: type, val: t) WASMError!t {
+        // TODO: the bulllll rule to round towards even integer
         return @round(val);
     }
     pub fn sqrt(comptime t: type, val: t) WASMError!t {

@@ -445,6 +445,14 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                         const dst, const src = try pop_binop(&value_stack);
                         dst.i32 = if (@field(ops.irelop, name[4..])(i64, dst.i64, src.i64)) 1 else 0;
                     },
+                    .f32_unop => {
+                        const dst = try top(&value_stack);
+                        dst.f32 = try @field(ops.funop, name[4..])(f32, dst.f32);
+                    },
+                    .f32_binop => {
+                        const dst, const src = try pop_binop(&value_stack);
+                        dst.f32 = try @field(ops.fbinop, name[4..])(f32, dst.f32, src.f32);
+                    },
                     .f64_unop => {
                         const dst = try top(&value_stack);
                         dst.f64 = try @field(ops.funop, name[4..])(f64, dst.f64);

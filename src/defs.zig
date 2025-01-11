@@ -298,6 +298,8 @@ pub const Category = enum {
     i64_unop,
     i64_binop,
     i64_relop,
+    f32_unop,
+    f32_binop,
     f64_unop,
     f64_binop,
     load,
@@ -306,7 +308,7 @@ pub const Category = enum {
 };
 
 // to start with this is only used at comptime
-pub fn category(op: OpCode) Category {
+pub fn category(comptime op: OpCode) Category {
     const numval = @intFromEnum(op);
     if (numval >= 0x28 and numval <= 0x35) return .load;
     if (numval >= 0x36 and numval <= 0x3E) return .store;
@@ -316,6 +318,8 @@ pub fn category(op: OpCode) Category {
     if (numval >= 0x6A and numval <= 0x78) return .i32_binop;
     if (numval >= 0x79 and numval <= 0x7B) return .i64_unop;
     if (numval >= 0x7C and numval <= 0x8A) return .i64_binop;
+    if (numval >= 0x8B and numval <= 0x91) return .f32_unop;
+    if (numval >= 0x92 and numval <= 0x98) return .f32_binop;
     if (numval >= 0x99 and numval <= 0x9F) return .f64_unop;
     if (numval >= 0xA0 and numval <= 0xA6) return .f64_binop;
     if (numval >= 0xC0 and numval <= 0xC1) return .i32_unop;
