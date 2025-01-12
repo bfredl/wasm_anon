@@ -5,6 +5,17 @@ pub const StackValue = extern union {
     f32: f32,
     f64: f64,
     ref: u32,
+
+    pub fn default(valtype: ValType) ?StackValue {
+        return switch (valtype) {
+            .i32 => .{ .i32 = 0 },
+            .i64 => .{ .i64 = 0 },
+            .f32 => .{ .f32 = 0 },
+            .f64 => .{ .f64 = 0 },
+            .externref => .{ .ref = 0 },
+            else => null, // a bit of a type mismatch but whatever
+        };
+    }
 };
 
 pub const SectionKind = enum(u8) {

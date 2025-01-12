@@ -233,11 +233,18 @@ pub const StackMachine = struct {
     values: std.ArrayList(StackValue),
     labels: std.ArrayList(StackLabel),
 
+    locals_ptr: u32 = 0,
+    frame_ptr: u32 = 0,
+
     pub fn init(allocator: std.mem.Allocator) StackMachine {
         return .{
             .values = .init(allocator),
             .labels = .init(allocator),
         };
+    }
+
+    pub fn nvals(self: *StackMachine) u32 {
+        return @intCast(self.values.items.len - self.frame_ptr);
     }
 
     pub fn deinit(self: *StackMachine) void {
@@ -249,8 +256,13 @@ pub const StackMachine = struct {
         try self.values.append(value);
     }
 
+    pub fn push_multiple(self: *StackMachine, values: []const StackValue) !void {
+        try self.values.appendSlice(values);
+    }
+
     pub fn pop(self: *StackMachine) !StackValue {
-        return self.values.popOrNull() orelse return error.RuntimeError;
+        if (self.values.items.len == self.frame_ptr) return error.RuntimeError;
+        return self.values.pop();
     }
 
     pub fn push_label(self: *StackMachine, c_ip: u32, n_vals: u16) !void {
@@ -265,7 +277,7 @@ pub const StackMachine = struct {
 
     pub fn pop_binop(self: *StackMachine) !struct { *StackValue, StackValue } {
         const stack = &self.values;
-        if (stack.items.len < 2) return error.RuntimeError;
+        if (self.nvals() < 2) return error.RuntimeError;
         const src = stack.pop();
         return .{ &stack.items[stack.items.len - 1], src };
     }
@@ -283,6 +295,15 @@ pub const StackMachine = struct {
         }
         return c_ip;
     }
+
+    pub fn enter_frame(self: *StackMachine) void {
+        self.frame_ptr = @intCast(self.values.items.len);
+    }
+
+    pub fn local(self: *StackMachine, idx: u32) *StackValue {
+        if (self.locals_ptr + idx >= self.frame_ptr) @panic("monkaS FEAR");
+        return &self.values.items[self.locals_ptr + idx];
+    }
 };
 
 pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
@@ -291,31 +312,37 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
         const r_parse = fbs2.reader();
         try self.parse(mod, r_parse);
     }
-
-    // TODO: typesafe init??
-    var locals: [10]StackValue = .{StackValue{ .i32 = 0 }} ** 10;
-    if (params.len != self.n_params) return error.InvalidArgument;
-    @memcpy(locals[0..self.n_params], params);
-    var fbs = mod.fbs_at(self.codeoff);
-    const r = fbs.reader();
-
     const control = self.control orelse @panic("how could you");
 
-    var n_locals: u32 = self.n_params;
-    const n_local_defs = if (skip_locals) 0 else try readu(r);
-    for (0..n_local_defs) |_| {
-        const n_decl = try readu(r);
-        const typ: defs.ValType = @enumFromInt(try r.readByte());
-        n_locals += n_decl;
-        if (typ != .i32) return error.NotImplemented;
-    }
-    if (n_locals > 10) return error.NotImplemented;
+    if (self.n_ret > 1) return error.NotImplemented;
 
     var stack: StackMachine = .init(mod.allocator);
     defer stack.deinit();
 
+    // NB: in the spec all locals are bundled into a "frame" object as a single
+    // entry on the stack. We do a little unbundling to keep stack object sizes
+    // pretty much homogenous.
+
+    stack.locals_ptr = @intCast(stack.values.items.len);
+    try stack.push_multiple(params);
+    var n_locals: u32 = self.n_params;
+
+    if (params.len != self.n_params) return error.InvalidArgument;
+    var fbs = mod.fbs_at(self.codeoff);
+    const r = fbs.reader();
+
+    const n_local_defs = if (skip_locals) 0 else try readu(r);
+    for (0..n_local_defs) |_| {
+        const n_decl = try readu(r);
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        const init: StackValue = StackValue.default(typ) orelse return error.InvalidFormat;
+        n_locals += n_decl;
+        for (0..n_decl) |_| try stack.push(init);
+    }
+
     var c_ip: u32 = 0;
 
+    stack.enter_frame();
     // entire body is implicitly a block, producing the return values
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_ret));
 
@@ -355,17 +382,17 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
             },
             .local_get => {
                 const idx = try readu(r);
-                try stack.push(locals[idx]);
+                try stack.push(stack.local(idx).*);
             },
             .local_set => {
                 const idx = try readu(r);
                 const val = try stack.pop();
-                locals[idx] = val;
+                stack.local(idx).* = val;
             },
             .local_tee => {
                 const idx = try readu(r);
                 const val = try stack.top();
-                locals[idx] = val.*;
+                stack.local(idx).* = val.*;
             },
             .global_get => {
                 const idx = try readu(r);
@@ -449,7 +476,7 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 // todo: cannot do this if we popped a "loop" header
                 // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
                 if (stack.labels.items.len == 0) {
-                    if (stack.values.items.len != self.n_ret) return error.RuntimeError;
+                    if (stack.nvals() != self.n_ret) return error.RuntimeError;
                     break;
                 }
             },
@@ -555,7 +582,7 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
             }
         }
     }
-    if (stack.values.items.len < self.n_ret) return error.RuntimeError;
+    if (stack.nvals() < self.n_ret) return error.RuntimeError;
 
     return if (self.n_ret > 0) stack.values.items[stack.values.items.len - 1] else .{ .i32 = 0x4EADBEAF };
 }
