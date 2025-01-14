@@ -54,6 +54,19 @@ pub fn build(b: *std.Build) void {
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
+    const use_upstream = true; // can we lazyDependency only for some b.step() ?
+    const maybe_spec_dep = if (use_upstream) b.lazyDependency("spec", .{}) else null;
+    const run_spec_tests = b.step("spectest", "Run spec tests");
+
+    if (maybe_spec_dep) |spec_dep| {
+        const upstream_specs = [_][]const u8{ "i32", "i64", "f64", "labels", "br_if" };
+        for (upstream_specs) |name| {
+            const spec_step = b.addRunArtifact(wast_exe);
+            spec_step.addFileArg(spec_dep.path(b.fmt("test/core/{s}.wast", .{name})));
+            run_spec_tests.dependOn(&spec_step.step);
+        }
+    }
+
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
