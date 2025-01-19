@@ -306,6 +306,16 @@ pub const StackMachine = struct {
     }
 };
 
+pub fn init_locals(stack: *StackMachine, r: Reader) !void {
+    const n_local_defs = try readu(r);
+    for (0..n_local_defs) |_| {
+        const n_decl = try readu(r);
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        const init: StackValue = StackValue.default(typ) orelse return error.InvalidFormat;
+        for (0..n_decl) |_| try stack.push(init);
+    }
+}
+
 pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
     if (self.control == null) {
         var fbs2 = mod.fbs_at(self.codeoff);
@@ -325,28 +335,26 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
 
     stack.locals_ptr = @intCast(stack.values.items.len);
     try stack.push_multiple(params);
-    var n_locals: u32 = self.n_params;
 
     if (params.len != self.n_params) return error.InvalidArgument;
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
-    const n_local_defs = if (skip_locals) 0 else try readu(r);
-    for (0..n_local_defs) |_| {
-        const n_decl = try readu(r);
-        const typ: defs.ValType = @enumFromInt(try r.readByte());
-        const init: StackValue = StackValue.default(typ) orelse return error.InvalidFormat;
-        n_locals += n_decl;
-        for (0..n_decl) |_| try stack.push(init);
-    }
-
-    var c_ip: u32 = 0;
-
+    if (!skip_locals) try init_locals(&stack, r);
     stack.enter_frame();
     // entire body is implicitly a block, producing the return values
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_ret));
 
     // fbs.pos is the insruction pointer which is a bit weird but works
+    try run_vm(&stack, in, r, control);
+    if (stack.nvals() < self.n_ret) return error.RuntimeError;
+
+    return if (self.n_ret > 0) stack.values.items[stack.values.items.len - 1] else .{ .i32 = 0x4EADBEAF };
+}
+
+fn run_vm(stack: *StackMachine, in: *Instance, r: Reader, control: []ControlItem) !void {
+    var c_ip: u32 = 0;
+
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
@@ -476,7 +484,8 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
                 // todo: cannot do this if we popped a "loop" header
                 // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
                 if (stack.labels.items.len == 0) {
-                    if (stack.nvals() != self.n_ret) return error.RuntimeError;
+                    // TODO
+                    // if (stack.nvals() != self.n_ret) return error.RuntimeError;
                     break;
                 }
             },
@@ -582,7 +591,4 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
             }
         }
     }
-    if (stack.nvals() < self.n_ret) return error.RuntimeError;
-
-    return if (self.n_ret > 0) stack.values.items[stack.values.items.len - 1] else .{ .i32 = 0x4EADBEAF };
 }
