@@ -3,6 +3,7 @@ const Instance = @This();
 const Module = @import("./Module.zig");
 const defs = @import("./defs.zig");
 const Function = @import("./Function.zig");
+const Interpreter = @import("./Interpreter.zig");
 
 mod: *Module,
 mem: std.ArrayList(u8),
@@ -30,5 +31,9 @@ pub fn deinit(self: *Instance) void {
 
 pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue) !defs.StackValue {
     if (idx >= self.mod.funcs.len) return error.OutOfRange;
-    return self.mod.funcs[idx].execute(self.mod, self, args, false);
+    const func = &self.mod.funcs[idx];
+
+    var stack: Interpreter = .init(self.mod.allocator);
+    defer stack.deinit();
+    return stack.execute(func, self.mod, self, args, false);
 }

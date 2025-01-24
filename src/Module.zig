@@ -44,6 +44,7 @@ globals_off: u32 = 0,
 mem_limits: Limits = .{ .min = 0, .max = null },
 
 const Function = @import("./Function.zig");
+const Interpreter = @import("./Interpreter.zig");
 
 pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream([]const u8) {
     return .{ .buffer = self.raw, .pos = off };
@@ -225,7 +226,7 @@ pub fn init_data(self: *Module, mem: []u8) !void {
         const memidx = if (typ == 0) 0 else try readu(r);
         if (memidx > 0) return error.NotImplemented;
 
-        const offset: usize = @intCast((try Function.eval_expr(self, r, .i32)).i32);
+        const offset: usize = @intCast((try Interpreter.eval_expr(self, r, .i32)).i32);
         const lenna = try readu(r);
         dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
 
@@ -249,7 +250,7 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue) !void {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
-        globals[i] = try Function.eval_expr(self, r, typ);
+        globals[i] = try Interpreter.eval_expr(self, r, typ);
     }
 }
 
