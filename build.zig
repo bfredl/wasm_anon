@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const llvm = b.option(bool, "llvm", "use llvm");
 
     const wasm_shelf = b.createModule(.{
         .root_source_file = b.path("src/wasm_shelf.zig"),
@@ -14,6 +15,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    if (llvm) |val| exe.use_llvm = val;
 
     exe.root_module.addImport("wasm_shelf", wasm_shelf);
     b.installArtifact(exe);
@@ -32,6 +34,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    if (llvm) |val| wast_exe.use_llvm = val;
 
     wast_exe.root_module.addImport("wasm_shelf", wasm_shelf);
     b.installArtifact(wast_exe);
