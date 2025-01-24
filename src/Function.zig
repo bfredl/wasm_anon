@@ -229,27 +229,41 @@ pub const StackLabel = struct {
     stack_level: u16,
 };
 
+pub const StackFrame = struct {
+    r_ip: u32,
+    c_ip: u32,
+    label_stack_level: u16,
+    locals_ptr: u32 = 0,
+    frame_ptr: u32 = 0,
+    func: *Function,
+};
+
 pub const StackMachine = struct {
     values: std.ArrayList(StackValue),
     labels: std.ArrayList(StackLabel),
+    frames: std.ArrayList(StackFrame),
 
     locals_ptr: u32 = 0,
     frame_ptr: u32 = 0,
+
+    frame_label: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator) StackMachine {
         return .{
             .values = .init(allocator),
             .labels = .init(allocator),
+            .frames = .init(allocator),
         };
-    }
-
-    pub fn nvals(self: *StackMachine) u32 {
-        return @intCast(self.values.items.len - self.frame_ptr);
     }
 
     pub fn deinit(self: *StackMachine) void {
         self.values.deinit();
         self.labels.deinit();
+        self.frames.deinit();
+    }
+
+    pub fn nvals(self: *StackMachine) u32 {
+        return @intCast(self.values.items.len - self.frame_ptr);
     }
 
     pub fn push(self: *StackMachine, value: StackValue) !void {
@@ -267,6 +281,10 @@ pub const StackMachine = struct {
 
     pub fn push_label(self: *StackMachine, c_ip: u32, n_vals: u16) !void {
         try self.labels.append(.{ .c_ip = c_ip, .stack_level = @intCast(self.values.items.len), .n_vals = n_vals });
+    }
+
+    pub fn push_frame(self: *StackMachine, r_ip: u32, c_ip: u32, func: *Function) !void {
+        try self.frames.append(.{ .r_ip = r_ip, .c_ip = c_ip, .func = func, .locals_ptr = self.locals_ptr, .frame_ptr = self.frame_ptr, .label_stack_level = @intCast(self.labels.items.len) });
     }
 
     pub fn top(self: *StackMachine) !*StackValue {
@@ -298,6 +316,7 @@ pub const StackMachine = struct {
 
     pub fn enter_frame(self: *StackMachine) void {
         self.frame_ptr = @intCast(self.values.items.len);
+        self.frame_label = @intCast(self.labels.items.len);
     }
 
     pub fn local(self: *StackMachine, idx: u32) *StackValue {
@@ -316,13 +335,17 @@ pub fn init_locals(stack: *StackMachine, r: Reader) !void {
     }
 }
 
-pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
+pub fn ensure_parsed(self: *Function, mod: *Module) ![]ControlItem {
     if (self.control == null) {
         var fbs2 = mod.fbs_at(self.codeoff);
         const r_parse = fbs2.reader();
         try self.parse(mod, r_parse);
     }
-    const control = self.control orelse @panic("how could you");
+    return self.control orelse @panic("how could you");
+}
+
+pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
+    const control = try self.ensure_parsed(mod);
 
     if (self.n_ret > 1) return error.NotImplemented;
 
@@ -334,9 +357,9 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
     // pretty much homogenous.
 
     stack.locals_ptr = @intCast(stack.values.items.len);
-    try stack.push_multiple(params);
-
     if (params.len != self.n_params) return error.InvalidArgument;
+    try stack.push_multiple(params);
+    // fbs.pos is the insruction pointer which is a bit weird but works
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
@@ -345,15 +368,16 @@ pub fn execute(self: *Function, mod: *Module, in: *Instance, params: []const Sta
     // entire body is implicitly a block, producing the return values
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_ret));
 
-    // fbs.pos is the insruction pointer which is a bit weird but works
-    try run_vm(&stack, in, r, control);
+    try run_vm(&stack, in, r, self);
     if (stack.nvals() < self.n_ret) return error.RuntimeError;
 
     return if (self.n_ret > 0) stack.values.items[stack.values.items.len - 1] else .{ .i32 = 0x4EADBEAF };
 }
 
-fn run_vm(stack: *StackMachine, in: *Instance, r: Reader, control: []ControlItem) !void {
+fn run_vm(stack: *StackMachine, in: *Instance, r: Reader, entry_func: *Function) !void {
     var c_ip: u32 = 0;
+    var func = entry_func;
+    var control = func.control.?;
 
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
@@ -490,12 +514,31 @@ fn run_vm(stack: *StackMachine, in: *Instance, r: Reader, control: []ControlItem
                 }
             },
             .ret => {
-                break;
+                // TODO: a bit dubbel, make label_target just be the destination?
+                label_target = @intCast(stack.labels.items.len - 1 - stack.frame_label);
             },
             .call => {
                 const idx = try readLeb(r, u32);
-                _ = idx;
-                severe("lies!\n", .{});
+                if (idx > in.mod.funcs.len) @panic("SHAKING FEAR");
+                const called = &in.mod.funcs[idx];
+                const called_control = try called.ensure_parsed(in.mod);
+                if (stack.nvals() < called.n_params) {
+                    return error.RuntimeError;
+                }
+
+                // save current state as a frame
+                // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
+                try stack.push_frame(@intCast(r.context.pos), c_ip, func);
+
+                // enter new function
+                stack.locals_ptr = @intCast(stack.values.items.len - called.n_params);
+                r.context.pos = called.codeoff;
+                try init_locals(stack, r);
+                func = called;
+                control = called_control;
+                stack.enter_frame();
+                // entire body is implicitly a block, producing the return values
+                try stack.push_label(@intCast(control.len - 1), @intCast(func.n_ret));
             },
             inline else => |tag| {
                 const category = comptime defs.category(tag);
@@ -588,6 +631,15 @@ fn run_vm(stack: *StackMachine, in: *Instance, r: Reader, control: []ControlItem
                 _ = try read.blocktype(r);
             } else {
                 c_ip -= 1; // messy!
+            }
+        }
+        // all function returns end up here
+        if (c_ip == control.len - 1) {
+            if (stack.frames.items.len == 0) {
+                // top-level invoked function
+                return;
+            } else {
+                @panic("at the diskho!");
             }
         }
     }
