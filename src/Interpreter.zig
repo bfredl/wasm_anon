@@ -11,7 +11,6 @@ const ControlItem = Function.ControlItem;
 const read = @import("./read.zig");
 const readLeb = read.readLeb;
 const readu = read.readu;
-const readName = read.readName;
 const Reader = read.Reader;
 const Interpreter = @This();
 
@@ -23,13 +22,13 @@ const StackValue = defs.StackValue;
 pub const StackLabel = struct {
     c_ip: u32,
     n_vals: u16,
-    stack_level: u16,
+    stack_level: u32,
 };
 
 pub const StackFrame = struct {
     r_ip: u32,
     c_ip: u32,
-    label_stack_level: u16,
+    frame_label: u32 = 0,
     locals_ptr: u32 = 0,
     frame_ptr: u32 = 0,
     func: *Function,
@@ -80,7 +79,7 @@ pub fn push_label(self: *Interpreter, c_ip: u32, n_vals: u16) !void {
 }
 
 pub fn push_frame(self: *Interpreter, r_ip: u32, c_ip: u32, func: *Function) !void {
-    try self.frames.append(.{ .r_ip = r_ip, .c_ip = c_ip, .func = func, .locals_ptr = self.locals_ptr, .frame_ptr = self.frame_ptr, .label_stack_level = @intCast(self.labels.items.len) });
+    try self.frames.append(.{ .r_ip = r_ip, .c_ip = c_ip, .func = func, .locals_ptr = self.locals_ptr, .frame_ptr = self.frame_ptr, .frame_label = self.frame_label });
 }
 
 pub fn top(self: *Interpreter) !*StackValue {
@@ -283,18 +282,6 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 // TODO: MYSKO
                 _ = stack.labels.popOrNull() orelse break;
             },
-            .end => {
-                c_ip += 1;
-                if (control[c_ip].off != pos) @panic("PANIKED FEAR");
-                _ = stack.labels.popOrNull() orelse @panic("RUSHED FEAR");
-                // todo: cannot do this if we popped a "loop" header
-                // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
-                if (stack.labels.items.len == 0) {
-                    // TODO
-                    // if (stack.nvals() != self.n_ret) return error.RuntimeError;
-                    break;
-                }
-            },
             .ret => {
                 // TODO: a bit dubbel, make label_target just be the destination?
                 label_target = @intCast(stack.labels.items.len - 1 - stack.frame_label);
@@ -321,6 +308,36 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 stack.enter_frame();
                 // entire body is implicitly a block, producing the return values
                 try stack.push_label(@intCast(control.len - 1), @intCast(func.n_ret));
+                c_ip = 0;
+            },
+            .end => {
+                c_ip += 1;
+                _ = stack.labels.popOrNull() orelse @panic("RUSHED FEAR");
+                // todo: cannot do this if we popped a "loop" header
+                // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
+                if (stack.labels.items.len == stack.frame_label) {
+                    if (stack.frames.popOrNull()) |f| {
+                        const returned = func;
+                        if (returned.n_ret > 0) return error.NotImplemented;
+                        func = f.func;
+                        control = func.control.?;
+                        if (stack.values.items.len < stack.frame_ptr) @panic("ayyooooo");
+                        stack.values.items.len = stack.frame_ptr;
+                        stack.frame_ptr = f.frame_ptr;
+                        stack.locals_ptr = f.locals_ptr;
+                        stack.frame_label = f.frame_label;
+
+                        c_ip = f.c_ip;
+                        r.context.pos = f.r_ip;
+                    } else {
+                        // top-level invoked function
+                        return;
+                    }
+                } else {
+                    if (c_ip >= control.len or control[c_ip].off != pos) @panic("PANIKED FEAR");
+                }
+                // TODO
+                // if (stack.nvals() != self.n_ret) return error.RuntimeError;
             },
             inline else => |tag| {
                 const category = comptime defs.category(tag);
@@ -415,14 +432,8 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 c_ip -= 1; // messy!
             }
         }
-        // all function returns end up here
-        if (c_ip == control.len - 1) {
-            if (stack.frames.items.len == 0) {
-                // top-level invoked function
-                return;
-            } else {
-                @panic("at the diskho!");
-            }
+        if (c_ip == control.len) {
+            @panic("allllllll");
         }
     }
 }
