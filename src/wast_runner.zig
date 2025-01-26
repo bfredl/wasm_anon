@@ -52,7 +52,7 @@ pub fn main() !u8 {
 
     var params: std.ArrayList(StackValue) = .init(allocator);
 
-    const AssertKind = enum { assert_return, assert_trap, assert_invalid, assert_malformed };
+    const AssertKind = enum { assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
@@ -97,23 +97,27 @@ pub fn main() !u8 {
         var expected_trap = false;
         var expected_ret: ?StackValue = null;
         var expected_type: ConstKind = undefined;
+        var n_ret: u32 = 0;
 
         switch (kind) {
             .assert_return => {
-                if (try t.expect_maybe(.LeftParen)) |_| {
+                while (try t.expect_maybe(.LeftParen)) |_| {
                     const typ = try t.expectAtomChoice(ConstKind);
                     const ret = try t.expect(.Atom);
                     _ = try t.expect(.RightParen);
 
-                    expected_type = typ;
-                    expected_ret = t.as_res(typ, ret) catch parm: {
-                        dbg("{s} ", .{t.rawtext(ret)});
-                        parse_fail = true;
-                        break :parm undefined;
-                    };
+                    if (n_ret == 0) {
+                        expected_type = typ;
+                        expected_ret = t.as_res(typ, ret) catch parm: {
+                            dbg("{s} ", .{t.rawtext(ret)});
+                            parse_fail = true;
+                            break :parm undefined;
+                        };
+                    }
+                    n_ret = n_ret + 1;
                 }
             },
-            .assert_trap => {
+            .assert_trap, .assert_exhaustion => {
                 _ = try t.expect(.String);
                 expected_trap = true;
             },
@@ -125,6 +129,16 @@ pub fn main() !u8 {
             // aha!
             failures += 1;
             dbg("\n", .{});
+            continue;
+        }
+        if (n_ret > 1) {
+            failures += 1;
+            dbg("TODO: multi-ret\n", .{});
+            continue;
+        }
+        if (kind == .assert_exhaustion) {
+            failures += 1;
+            dbg("TODO: exhaust\n", .{});
             continue;
         }
 

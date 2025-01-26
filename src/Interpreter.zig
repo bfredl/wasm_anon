@@ -129,6 +129,7 @@ pub fn init_locals(stack: *Interpreter, r: Reader) !void {
     }
 }
 
+// TODO: this should be made flexible enough to allow ie a nested callback from a a host function
 pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
     const control = try self.ensure_parsed(mod);
     if (self.n_ret > 1) return error.NotImplemented;
@@ -294,6 +295,9 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 if (stack.nvals() < called.n_params) {
                     return error.RuntimeError;
                 }
+
+                // let's crawl in the mud first
+                if (stack.frames.items.len > 5) return error.NotImplemented;
 
                 // save current state as a frame
                 // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
