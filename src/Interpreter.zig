@@ -132,7 +132,10 @@ pub fn init_locals(stack: *Interpreter, r: Reader) !void {
 // TODO: this should be made flexible enough to allow ie a nested callback from a a host function
 pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
     const control = try self.ensure_parsed(mod);
-    if (self.n_ret > 1) return error.NotImplemented;
+    if (self.n_ret > 1) {
+        severe("execute: multi_ret!\n", .{});
+        return error.NotImplemented;
+    }
 
     // NB: in the spec all locals are bundled into a "frame" object as a single
     // entry on the stack. We do a little unbundling to keep stack object sizes
@@ -297,7 +300,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 }
 
                 // let's crawl in the mud first
-                if (stack.frames.items.len > 5) return error.NotImplemented;
+                if (stack.frames.items.len > 5) {
+                    severe("not ready for recursion!\n", .{});
+                    return error.NotImplemented;
+                }
 
                 // save current state as a frame
                 // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
@@ -322,11 +328,18 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 if (stack.labels.items.len == stack.frame_label) {
                     if (stack.frames.popOrNull()) |f| {
                         const returned = func;
-                        if (returned.n_ret > 0) return error.NotImplemented;
+                        if (returned.n_ret > 0) {
+                            // these can end up overlapping
+                            std.mem.copyForwards(
+                                StackValue,
+                                stack.values.items[stack.locals_ptr..][0..returned.n_ret],
+                                stack.values.items[stack.values.items.len - returned.n_ret ..],
+                            );
+                        }
                         func = f.func;
                         control = func.control.?;
-                        if (stack.values.items.len < stack.frame_ptr) @panic("ayyooooo");
-                        stack.values.items.len = stack.frame_ptr;
+                        if (stack.values.items.len < stack.locals_ptr) @panic("ayyooooo");
+                        stack.values.items.len = stack.locals_ptr + returned.n_ret;
                         stack.frame_ptr = f.frame_ptr;
                         stack.locals_ptr = f.locals_ptr;
                         stack.frame_label = f.frame_label;
