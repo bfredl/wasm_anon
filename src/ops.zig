@@ -171,21 +171,29 @@ pub const funop = struct {
     }
 };
 
+fn intFromFloat(inttype: type, fval: anytype) WASMError!inttype {
+    if (std.math.isNan(fval)) return error.WASMTrap;
+    const truncval = @trunc(fval);
+    if (truncval >= std.math.maxInt(inttype) or truncval < std.math.minInt(inttype)) return error.WASMTrap;
+    return @intFromFloat(truncval);
+}
+
 pub const convert = struct {
     pub fn i32_wrap_i64(val: StackValue) WASMError!StackValue {
         return .{ .i32 = @truncate(val.i64) };
     }
+
     pub fn i32_trunc_f32_s(val: StackValue) WASMError!StackValue {
-        return .{ .i32 = @intFromFloat(val.f32) };
+        return .{ .i32 = try intFromFloat(i32, val.f32) };
     }
     pub fn i32_trunc_f32_u(val: StackValue) WASMError!StackValue {
-        return .{ .i32 = take_u32(@intFromFloat(val.f32)) };
+        return .{ .i32 = @bitCast(try intFromFloat(u32, val.f32)) };
     }
     pub fn i32_trunc_f64_s(val: StackValue) WASMError!StackValue {
-        return .{ .i32 = @intFromFloat(val.f64) };
+        return .{ .i32 = try intFromFloat(i32, val.f64) };
     }
     pub fn i32_trunc_f64_u(val: StackValue) WASMError!StackValue {
-        return .{ .i32 = take_u32(@intFromFloat(val.f64)) };
+        return .{ .i32 = @bitCast(try intFromFloat(u32, val.f64)) };
     }
     pub fn i64_extend_i32_s(val: StackValue) WASMError!StackValue {
         return .{ .i64 = val.i32 };
