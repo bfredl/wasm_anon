@@ -10,6 +10,10 @@ fn u(val: anytype) utype(@TypeOf(val)) {
     return @bitCast(val);
 }
 
+fn take_u32(val: u32) i32 {
+    return @bitCast(val);
+}
+
 pub const ibinop = struct {
     pub fn add(comptime t: type, lhs: t, rhs: t) WASMError!t {
         return lhs +% rhs;
@@ -173,5 +177,20 @@ pub const convert = struct {
     }
     pub fn i32_trunc_f32_s(val: StackValue) WASMError!StackValue {
         return .{ .i32 = @intFromFloat(val.f32) };
+    }
+    pub fn i32_trunc_f32_u(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = take_u32(@intFromFloat(val.f32)) };
+    }
+    pub fn i32_trunc_f64_s(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = @intFromFloat(val.f64) };
+    }
+    pub fn i32_trunc_f64_u(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = take_u32(@intFromFloat(val.f64)) };
+    }
+    pub fn i64_extend_i32_s(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = val.i32 };
+    }
+    pub fn i64_extend_i32_u(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = u(val.i32) };
     }
 };
