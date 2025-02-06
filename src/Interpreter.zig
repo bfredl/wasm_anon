@@ -130,19 +130,16 @@ pub fn init_locals(stack: *Interpreter, r: Reader) !void {
 }
 
 // TODO: this should be made flexible enough to allow ie a nested callback from a a host function
-pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, skip_locals: bool) !StackValue {
+// TODO: use stack.values to pass args/ret ?
+pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue, skip_locals: bool) !u32 {
     const control = try self.ensure_parsed(mod);
-    if (self.n_ret > 1) {
-        severe("execute: multi_ret!\n", .{});
-        return error.NotImplemented;
-    }
 
     // NB: in the spec all locals are bundled into a "frame" object as a single
     // entry on the stack. We do a little unbundling to keep stack object sizes
     // pretty much homogenous.
 
     stack.locals_ptr = @intCast(stack.values.items.len);
-    if (params.len != self.n_params) return error.InvalidArgument;
+    if (params.len != self.n_params or ret.len < self.n_ret) return error.InvalidArgument;
     try stack.push_multiple(params);
     // fbs.pos is the insruction pointer which is a bit weird but works
     var fbs = mod.fbs_at(self.codeoff);
@@ -156,7 +153,8 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     try stack.run_vm(in, r, self);
     if (stack.nvals() < self.n_ret) return error.RuntimeError;
 
-    return if (self.n_ret > 0) stack.values.items[stack.values.items.len - 1] else .{ .i32 = 0x4EADBEAF };
+    @memcpy(ret[0..self.n_ret], stack.values.items[stack.values.items.len - self.n_ret ..]);
+    return self.n_ret;
 }
 
 fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) !void {
@@ -199,7 +197,13 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             },
             .local_get => {
                 const idx = try readu(r);
-                try stack.push(stack.local(idx).*);
+                // TODO: they dun guufed value semantics if this was inline
+                // or even `const val = stack.local(idx).*;`
+                //
+                // NICE JOB ZIG CORE DEVS
+                var val: StackValue = undefined;
+                val = stack.local(idx).*;
+                try stack.push(val);
             },
             .local_set => {
                 const idx = try readu(r);

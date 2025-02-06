@@ -29,11 +29,11 @@ pub fn deinit(self: *Instance) void {
     self.mod.allocator.free(self.globals);
 }
 
-pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue) !defs.StackValue {
+pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue) !u32 {
     if (idx >= self.mod.funcs.len) return error.OutOfRange;
     const func = &self.mod.funcs[idx];
 
     var stack: Interpreter = .init(self.mod.allocator);
     defer stack.deinit();
-    return stack.execute(func, self.mod, self, args, false);
+    return stack.execute(func, self.mod, self, args, ret, false);
 }

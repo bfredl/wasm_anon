@@ -44,7 +44,9 @@ pub fn main() !void {
         if (sym.kind != .func) return dbg("not a function :(\n", .{});
 
         const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
-        const res = try in.execute(sym.idx, &.{.{ .i32 = num }});
-        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res.i32 });
+        var res: [1]StackValue = undefined;
+        const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res);
+        if (n_res != 1) dbg("TODO: n_res\n", .{});
+        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res[0].i32 });
     }
 }

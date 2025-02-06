@@ -94,10 +94,11 @@ pub fn main() !u8 {
 
         cases += 1;
 
+        const max_ret = 2;
         var expected_trap = false;
-        var expected_ret: ?StackValue = null;
-        var expected_type: ConstKind = undefined;
-        var n_ret: u32 = 0;
+        var expected_n_ret: u32 = 0;
+        var expected_ret: [max_ret]StackValue = undefined;
+        var expected_type: [max_ret]ConstKind = undefined;
 
         switch (kind) {
             .assert_return => {
@@ -106,15 +107,14 @@ pub fn main() !u8 {
                     const ret = try t.expect(.Atom);
                     _ = try t.expect(.RightParen);
 
-                    if (n_ret == 0) {
-                        expected_type = typ;
-                        expected_ret = t.as_res(typ, ret) catch parm: {
-                            dbg("{s} ", .{t.rawtext(ret)});
-                            parse_fail = true;
-                            break :parm undefined;
-                        };
-                    }
-                    n_ret = n_ret + 1;
+                    if (expected_n_ret == max_ret) @panic("increase 'max_ret' mayhaps");
+                    expected_type[expected_n_ret] = typ;
+                    expected_ret[expected_n_ret] = t.as_res(typ, ret) catch parm: {
+                        dbg("{s} ", .{t.rawtext(ret)});
+                        parse_fail = true;
+                        break :parm undefined;
+                    };
+                    expected_n_ret = expected_n_ret + 1;
                 }
             },
             .assert_trap, .assert_exhaustion => {
@@ -131,18 +131,14 @@ pub fn main() !u8 {
             dbg("\n", .{});
             continue;
         }
-        if (n_ret > 1) {
-            failures += 1;
-            dbg("TODO: multi-ret\n", .{});
-            continue;
-        }
         if (kind == .assert_exhaustion) {
             failures += 1;
             dbg("TODO: exhaust\n", .{});
             continue;
         }
 
-        const res = in.execute(sym.idx, params.items) catch |err| fail: {
+        var res: [max_ret]StackValue = undefined;
+        const maybe_n_res = in.execute(sym.idx, params.items, &res) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
                     failures += 1;
@@ -154,31 +150,27 @@ pub fn main() !u8 {
         };
 
         if (!expected_trap) {
-            if (expected_ret) |exp| {
-                switch (expected_type) {
-                    inline else => |ctyp| {
-                        const expected = @field(exp, @tagName(ctyp)[0..3]);
+            if (maybe_n_res) |n_res| {
+                for (expected_type[0..n_res], expected_ret[0..n_res], 0..) |typ, val, i| {
+                    switch (typ) {
+                        inline else => |ctyp| {
+                            const expected = @field(val, @tagName(ctyp)[0..3]);
 
-                        if (res) |ok_res| {
-                            const actual = @field(ok_res, @tagName(ctyp)[0..3]);
+                            const actual = @field(res[i], @tagName(ctyp)[0..3]);
                             if (actual != expected) {
                                 dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
                                 failures += 1;
                             }
-                        } else {
-                            dbg("{s}(...): TRAP, expected: {}\n", .{ name, expected });
-                        }
-                    },
+                        },
+                    }
                 }
             } else {
-                if (res == null) {
-                    dbg("{s}(...): TRAP, expected ok\n", .{name});
-                    failures += 1;
-                }
+                dbg("{s}(...): TRAP, expected ok\n", .{name});
+                failures += 1;
             }
         } else {
-            if (res) |ok_res| {
-                dbg("{s}(...): expected trap but got: {}\n", .{ name, ok_res });
+            if (maybe_n_res) |_| {
+                dbg("{s}(...): expected trap but got success\n", .{name});
                 failures += 1;
             }
         }
