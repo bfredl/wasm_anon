@@ -163,8 +163,12 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                         if (try r.readByte() != 0) return error.InvalidFormat;
                     },
                     else => {
-                        severe(" UNKNOWN: {}, aborting!", .{@intFromEnum(code)});
-                        return;
+                        if (@intFromEnum(code) < 8) {
+                            // ok, converter
+                        } else {
+                            severe(" UNKNOWN: {}, aborting!", .{@intFromEnum(code)});
+                            return error.InvalidFormat;
+                        }
                     },
                 }
             },
