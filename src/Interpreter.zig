@@ -171,6 +171,17 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .drop => {
                 _ = try stack.pop();
             },
+            .select, .select_t => {
+                if (inst == .select_t) {
+                    const num = try readu(r);
+                    if (num != 1) return error.InvalidFormat; // possible extension
+                    const typ: defs.ValType = @enumFromInt(try r.readByte());
+                    _ = typ;
+                }
+                const pred = try stack.pop();
+                const val1, const val2 = try stack.pop_binop();
+                if (pred.i32 == 0) val1.* = val2;
+            },
             .i32_const => {
                 const val = try readLeb(r, i32);
                 try stack.push(.{ .i32 = val });

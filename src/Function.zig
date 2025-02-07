@@ -151,6 +151,12 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 if (idx >= mod.n_globals) return error.InvalidFormat;
             },
             .drop, .select => {},
+            .select_t => {
+                const num = try readu(r);
+                if (num != 1) return error.InvalidFormat; // possible extension
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
+                dbg(" {}", .{typ});
+            },
             .prefixed => {
                 const code: defs.Prefixed = @enumFromInt(try readu(r));
                 dbg(":{s}", .{@tagName(code)});
