@@ -157,7 +157,9 @@ pub fn main() !u8 {
                             const expected = @field(val, @tagName(ctyp)[0..3]);
 
                             const actual = @field(res[i], @tagName(ctyp)[0..3]);
-                            if (actual != expected) {
+                            if (@typeInfo(@TypeOf(expected)) == .float and std.math.isNan(expected) and std.math.isNan(actual)) {
+                                // ok
+                            } else if (actual != expected) {
                                 dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
                                 failures += 1;
                             }

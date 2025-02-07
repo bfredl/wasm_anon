@@ -168,6 +168,9 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
         dbg("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, stack.values.items.len, stack.labels.items.len });
         var label_target: ?u32 = null;
         switch (inst) {
+            .unreachable_ => {
+                return error.WasmTRAP;
+            },
             .drop => {
                 _ = try stack.pop();
             },
