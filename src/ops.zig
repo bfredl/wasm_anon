@@ -201,4 +201,58 @@ pub const convert = struct {
     pub fn i64_extend_i32_u(val: StackValue) WASMError!StackValue {
         return .{ .i64 = u(val.i32) };
     }
+    pub fn i64_trunc_f32_s(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = try intFromFloat(i64, val.f32) };
+    }
+    pub fn i64_trunc_f32_u(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = @bitCast(try intFromFloat(u64, val.f32)) };
+    }
+    pub fn i64_trunc_f64_s(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = try intFromFloat(i64, val.f64) };
+    }
+    pub fn i64_trunc_f64_u(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = @bitCast(try intFromFloat(u64, val.f64)) };
+    }
+    pub fn f32_convert_i32_s(val: StackValue) WASMError!StackValue {
+        return .{ .f32 = @floatFromInt(val.i32) };
+    }
+    pub fn f32_convert_i32_u(val: StackValue) WASMError!StackValue {
+        return .{ .f32 = @floatFromInt(u(val.i32)) };
+    }
+    pub fn f32_convert_i64_s(val: StackValue) WASMError!StackValue {
+        return .{ .f32 = @floatFromInt(val.i64) };
+    }
+    pub fn f32_convert_i64_u(val: StackValue) WASMError!StackValue {
+        return .{ .f32 = @floatFromInt(u(val.i64)) };
+    }
+    pub fn f32_demote_f64(val: StackValue) WASMError!StackValue {
+        return .{ .f32 = @floatCast(val.f64) };
+    }
+    pub fn f64_convert_i32_s(val: StackValue) WASMError!StackValue {
+        return .{ .f64 = @floatFromInt(val.i32) };
+    }
+    pub fn f64_convert_i32_u(val: StackValue) WASMError!StackValue {
+        return .{ .f64 = @floatFromInt(u(val.i32)) };
+    }
+    pub fn f64_convert_i64_s(val: StackValue) WASMError!StackValue {
+        return .{ .f64 = @floatFromInt(val.i64) };
+    }
+    pub fn f64_convert_i64_u(val: StackValue) WASMError!StackValue {
+        return .{ .f64 = @floatFromInt(u(val.i64)) };
+    }
+    pub fn f64_promote_f32(val: StackValue) WASMError!StackValue {
+        return .{ .f64 = val.f32 };
+    }
+    pub fn i32_reinterpret_f32(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = @bitCast(val.f32) };
+    }
+    pub fn i64_reinterpret_f64(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = @bitCast(val.f64) };
+    }
+    pub fn f32_reinterpret_i32(val: StackValue) WASMError!StackValue {
+        return .{ .f32 = @bitCast(val.i32) };
+    }
+    pub fn f64_reinterpret_i64(val: StackValue) WASMError!StackValue {
+        return .{ .f64 = @bitCast(val.i64) };
+    }
 };
