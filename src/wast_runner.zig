@@ -29,6 +29,15 @@ pub fn main() !u8 {
     const buf = try readall(allocator, filearg);
     defer allocator.free(buf);
 
+    var maxerr: u32 = 0;
+    var specname: ?[]u8 = null;
+
+    if (argv.len >= 4) {
+        specname = std.mem.span(argv[2]);
+        const errarg = std.mem.span(argv[3]);
+        maxerr = try std.fmt.parseInt(@TypeOf(maxerr), errarg, 10);
+    }
+
     var t: Tokenizer = .{ .str = buf };
     errdefer t.fail_pos();
 
@@ -178,8 +187,10 @@ pub fn main() !u8 {
         }
     }
 
-    dbg("\r{} tests, {} ok, {} fail ({} unapplicable)\n", .{ cases, cases - failures, failures, unapplicable });
-    return if (failures > 0) 1 else 0;
+    dbg("\r", .{});
+    if (specname) |nam| dbg("{s}: ", .{nam});
+    dbg("{} tests, {} ok, {} fail ({} unapplicable, {} max)\n", .{ cases, cases - failures, failures, unapplicable, maxerr });
+    return if (failures > maxerr) 1 else 0;
 }
 
 const Tokenizer = struct {

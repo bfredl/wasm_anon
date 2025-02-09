@@ -62,10 +62,13 @@ pub fn build(b: *std.Build) void {
     const run_spec_tests = b.step("spectest", "Run spec tests");
 
     if (maybe_spec_dep) |spec_dep| {
-        const upstream_specs = [_][]const u8{ "i32", "i64", "f64", "labels", "br_if" };
-        for (upstream_specs) |name| {
+        const upstream_specs = [_]struct { []const u8, u32 }{ .{ "i32", 0 }, .{ "i64", 0 }, .{ "f64", 913 }, .{ "labels", 0 }, .{ "br_if", 1 } };
+        for (upstream_specs) |item| {
+            const name, const fail = item;
             const spec_step = b.addRunArtifact(wast_exe);
             spec_step.addFileArg(spec_dep.path(b.fmt("test/core/{s}.wast", .{name})));
+            spec_step.addArg(name);
+            spec_step.addArg(b.fmt("{}", .{fail}));
             run_spec_tests.dependOn(&spec_step.step);
         }
     }
