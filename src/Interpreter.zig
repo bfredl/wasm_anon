@@ -71,7 +71,7 @@ pub fn push_multiple(self: *Interpreter, values: []const StackValue) !void {
 
 pub fn pop(self: *Interpreter) !StackValue {
     if (self.values.items.len == self.frame_ptr) return error.RuntimeError;
-    return self.values.pop();
+    return self.values.pop() orelse return error.RuntimeError;
 }
 
 pub fn push_label(self: *Interpreter, c_ip: u32, n_vals: u16) !void {
@@ -91,7 +91,7 @@ pub fn top(self: *Interpreter) !*StackValue {
 pub fn pop_binop(self: *Interpreter) !struct { *StackValue, StackValue } {
     const stack = &self.values;
     if (self.nvals() < 2) return error.RuntimeError;
-    const src = stack.pop();
+    const src = stack.pop().?;
     return .{ &stack.items[stack.items.len - 1], src };
 }
 
@@ -302,7 +302,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 // execute the end inline
                 r.context.pos = control[c_ip].off + 1;
                 // TODO: MYSKO
-                _ = stack.labels.popOrNull() orelse break;
+                _ = stack.labels.pop() orelse break;
             },
             .ret => {
                 // TODO: a bit dubbel, make label_target just be the destination?
@@ -340,11 +340,11 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             },
             .end => {
                 c_ip += 1;
-                _ = stack.labels.popOrNull() orelse @panic("RUSHED FEAR");
+                _ = stack.labels.pop() orelse @panic("RUSHED FEAR");
                 // todo: cannot do this if we popped a "loop" header
                 // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
                 if (stack.labels.items.len == stack.frame_label) {
-                    if (stack.frames.popOrNull()) |f| {
+                    if (stack.frames.pop()) |f| {
                         const returned = func;
                         if (returned.n_ret > 0) {
                             // these can end up overlapping
