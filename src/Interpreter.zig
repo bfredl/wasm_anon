@@ -410,6 +410,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                         const dst, const src = try stack.pop_binop();
                         dst.f32 = try @field(ops.fbinop, name[4..])(f32, dst.f32, src.f32);
                     },
+                    .f32_relop => {
+                        const dst, const src = try stack.pop_binop();
+                        dst.i32 = if (@field(ops.frelop, name[4..])(f32, dst.f32, src.f32)) 1 else 0;
+                    },
                     .f64_unop => {
                         const dst = try stack.top();
                         dst.f64 = try @field(ops.funop, name[4..])(f64, dst.f64);
@@ -417,6 +421,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     .f64_binop => {
                         const dst, const src = try stack.pop_binop();
                         dst.f64 = try @field(ops.fbinop, name[4..])(f64, dst.f64, src.f64);
+                    },
+                    .f64_relop => {
+                        const dst, const src = try stack.pop_binop();
+                        dst.i32 = if (@field(ops.frelop, name[4..])(f64, dst.f64, src.f64)) 1 else 0;
                     },
                     .convert => {
                         const dst = try stack.top();

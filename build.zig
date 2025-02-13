@@ -62,7 +62,16 @@ pub fn build(b: *std.Build) void {
     const run_spec_tests = b.step("spectest", "Run spec tests");
 
     if (maybe_spec_dep) |spec_dep| {
-        const upstream_specs = [_]struct { []const u8, u32 }{ .{ "i32", 0 }, .{ "i64", 0 }, .{ "f64", 2 }, .{ "f32", 2 }, .{ "labels", 0 }, .{ "br_if", 0 } };
+        const upstream_specs = [_]struct { []const u8, u32 }{
+            .{ "i32", 0 },
+            .{ "i64", 0 },
+            .{ "f32", 2 },
+            .{ "f64", 2 },
+            .{ "f32_cmp", 0 },
+            .{ "f64_cmp", 0 },
+            .{ "labels", 0 },
+            .{ "br_if", 0 },
+        };
         for (upstream_specs) |item| {
             const name, const fail = item;
             const spec_step = b.addRunArtifact(wast_exe);

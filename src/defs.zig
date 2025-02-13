@@ -311,8 +311,10 @@ pub const Category = enum {
     i64_relop,
     f32_unop,
     f32_binop,
+    f32_relop,
     f64_unop,
     f64_binop,
+    f64_relop,
     convert,
     load,
     store,
@@ -326,6 +328,8 @@ pub fn category(comptime op: OpCode) Category {
     if (numval >= 0x36 and numval <= 0x3E) return .store;
     if (numval >= 0x46 and numval <= 0x4F) return .i32_relop;
     if (numval >= 0x51 and numval <= 0x5A) return .i64_relop;
+    if (numval >= 0x5B and numval <= 0x60) return .f32_relop;
+    if (numval >= 0x61 and numval <= 0x66) return .f64_relop;
     if (numval >= 0x67 and numval <= 0x69) return .i32_unop;
     if (numval >= 0x6A and numval <= 0x78) return .i32_binop;
     if (numval >= 0x79 and numval <= 0x7B) return .i64_unop;

@@ -175,6 +175,27 @@ pub const funop = struct {
     }
 };
 
+pub const frelop = struct {
+    pub fn eq(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs == rhs;
+    }
+    pub fn ne(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs != rhs;
+    }
+    pub fn lt(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs < rhs;
+    }
+    pub fn le(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs <= rhs;
+    }
+    pub fn gt(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs > rhs;
+    }
+    pub fn ge(comptime t: type, lhs: t, rhs: t) bool {
+        return lhs >= rhs;
+    }
+};
+
 fn intFromFloat(inttype: type, fval: anytype) WASMError!inttype {
     if (std.math.isNan(fval)) return error.WASMTrap;
     const truncval = @trunc(fval);
