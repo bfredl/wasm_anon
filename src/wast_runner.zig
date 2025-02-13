@@ -166,6 +166,7 @@ pub fn main() !u8 {
                             const expected = @field(val, @tagName(ctyp)[0..3]);
 
                             const actual = @field(res[i], @tagName(ctyp)[0..3]);
+                            // TODO: if "expected" is canonical then "actual" should be as well
                             if (@typeInfo(@TypeOf(expected)) == .float and std.math.isNan(expected) and std.math.isNan(actual)) {
                                 // ok
                             } else if (actual != expected) {
@@ -414,6 +415,12 @@ const Tokenizer = struct {
     fn nandesc(ftyp: type, desc: []const u8) !if (ftyp == f64) u64 else u32 {
         if (std.mem.eql(u8, desc, "canonical")) {
             return if (ftyp == f64) 0x7ff8000000000000 else 0x7fc00000;
+        } else if (std.mem.eql(u8, desc, "arithmetic")) {
+            // really any quiet NaN including canonical but whatever
+            return if (ftyp == f64) 0x7fffffffffffffff else 0x7fffffff;
+        } else if (desc.len > 2 and std.mem.eql(u8, desc[0..2], "0x")) {
+            const mag = if (ftyp == f64) 0x7ff0000000000000 else 0x7f800000;
+            return mag + try std.fmt.parseInt(if (ftyp == f64) u64 else u32, desc[2..], 16);
         }
         return error.NotImplemented;
     }

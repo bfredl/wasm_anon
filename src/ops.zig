@@ -136,9 +136,13 @@ pub const fbinop = struct {
         return lhs / rhs;
     }
     pub fn min(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        if (std.math.isNan(lhs)) return lhs;
+        if (std.math.isNan(rhs)) return rhs;
         return @min(lhs, rhs);
     }
     pub fn max(comptime t: type, lhs: t, rhs: t) WASMError!t {
+        if (std.math.isNan(lhs)) return lhs;
+        if (std.math.isNan(rhs)) return rhs;
         return @max(lhs, rhs);
     }
     pub fn copysign(comptime t: type, lhs: t, rhs: t) WASMError!t {
