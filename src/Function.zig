@@ -157,6 +157,9 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
                 dbg(" {}", .{typ});
             },
+            .memory_size, .memory_grow => {
+                if (try r.readByte() != 0) return error.InvalidFormat;
+            },
             .prefixed => {
                 const code: defs.Prefixed = @enumFromInt(try readu(r));
                 dbg(":{s}", .{@tagName(code)});

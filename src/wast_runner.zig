@@ -411,8 +411,22 @@ const Tokenizer = struct {
         return try std.fmt.parseInt(ityp, text, 10);
     }
 
+    fn nandesc(ftyp: type, desc: []const u8) !if (ftyp == f64) u64 else u32 {
+        if (std.mem.eql(u8, desc, "canonical")) {
+            return if (ftyp == f64) 0x7ff8000000000000 else 0x7fc00000;
+        }
+        return error.NotImplemented;
+    }
+
     fn float(self: *Tokenizer, ftyp: type, t: Token) !ftyp {
         const text = self.rawtext(t);
+        if (text.len >= 4 and std.mem.eql(u8, text[0..4], "nan:")) {
+            return @bitCast(try nandesc(ftyp, text[4..]));
+        } else if (text.len >= 5 and std.mem.eql(u8, text[0..5], "-nan:")) {
+            const ival = try nandesc(ftyp, text[5..]);
+            const sval = if (ftyp == f64) 0x8000000000000000 else 0x80000000;
+            return @bitCast(ival + sval);
+        }
         return try std.fmt.parseFloat(ftyp, text);
     }
 
