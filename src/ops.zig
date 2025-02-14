@@ -208,8 +208,7 @@ fn intFromFloat(inttype: type, fval: anytype) WASMError!inttype {
 fn intFromFloat_sat(inttype: type, fval: anytype) WASMError!inttype {
     if (std.math.isNan(fval)) return 0;
     const truncval = @trunc(fval);
-    const ftype = @TypeOf(fval);
-    if (truncval >= @as(ftype, std.math.maxInt(inttype))) return std.math.maxInt(inttype);
+    if (truncval >= std.math.maxInt(inttype)) return std.math.maxInt(inttype);
     if (truncval < std.math.minInt(inttype)) return std.math.minInt(inttype);
     return @intFromFloat(truncval);
 }
