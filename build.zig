@@ -70,6 +70,9 @@ pub fn build(b: *std.Build) void {
             .{ "f32_cmp", 0 },
             .{ "f64_cmp", 0 },
             .{ "labels", 0 },
+            .{ "local_get", 0 },
+            .{ "local_set", 0 },
+            .{ "local_tee", 0 },
             .{ "br_if", 0 },
             .{ "conversions", 6 },
         };

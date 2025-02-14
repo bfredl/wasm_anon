@@ -308,9 +308,21 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 // TODO: a bit dubbel, make label_target just be the destination?
                 label_target = @intCast(stack.labels.items.len - 1 - stack.frame_label);
             },
-            .call => {
-                const idx = try readLeb(r, u32);
+            .call, .call_indirect => {
+                const idx = if (inst == .call_indirect) funcidx: {
+                    const tblidx = try readLeb(r, u32);
+                    _ = tblidx; // clown face emoji
+                    const typidx = try readLeb(r, u32);
+                    const eidx: u32 = @bitCast((try stack.pop()).i32);
+                    if (eidx >= in.mod.funcref_table.len) return error.WASMTrap;
+                    const funcidx = in.mod.funcref_table[eidx];
+                    if (funcidx >= in.mod.funcs.len) return error.WASMTrap;
+                    if (typidx != in.mod.funcs[funcidx].typeidx) return error.WASMTrap;
+                    break :funcidx funcidx;
+                } else try readLeb(r, u32);
+
                 if (idx > in.mod.funcs.len) @panic("SHAKING FEAR");
+
                 const called = &in.mod.funcs[idx];
                 const called_control = try called.ensure_parsed(in.mod);
                 if (stack.nvals() < called.n_params) {

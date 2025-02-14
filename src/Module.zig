@@ -43,6 +43,9 @@ globals_off: u32 = 0,
 
 mem_limits: Limits = .{ .min = 0, .max = null },
 
+// this a bit of a hack, I think a module can has multiple funcref tables
+funcref_table: []u32 = &.{},
+
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
 
@@ -81,9 +84,12 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
                 try export_section_dbg(r);
             },
             .code => try self.code_section(r),
-            .table => try table_section(r),
+            .table => try self.table_section(r),
+            .element => try self.element_section(r),
             .data => self.data_off = @intCast(fbs.pos),
-            else => {}, // try r.skipBytes(len, .{})
+            else => {
+                // dbg("NO {s}!\n", .{@tagName(kind)});
+            },
         }
 
         // TODO: this should be strict, but we are just fucking around and finding out for now
@@ -254,13 +260,40 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue) !void {
     }
 }
 
-pub fn table_section(r: Reader) !void {
+pub fn table_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("Tables: {}\n", .{len});
     for (0..len) |_| {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         const limits = try readLimits(r);
         dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
+        if (typ == .funcref and limits.min > 0) {
+            if (self.funcref_table.len > 0) return error.NotImplemented;
+            self.funcref_table = try self.allocator.alloc(u32, limits.min);
+            @memset(self.funcref_table, 0xffffffff); // TODO: or zero?? what is it??
+        }
+    }
+}
+
+pub fn element_section(self: *Module, r: Reader) !void {
+    const len = try readu(r);
+    dbg("Elements: {}\n", .{len});
+    for (0..len) |_| {
+        const kinda = try readu(r);
+        if (kinda == 0) {
+            const offset: usize = @intCast((try Interpreter.eval_expr(self, r, .i32)).i32);
+            const elen = try readu(r);
+            if (offset + len > self.funcref_table.len) {
+                return error.InvalidFormat;
+            }
+            for (0..elen) |i| {
+                const item = try readu(r);
+                self.funcref_table[offset + i] = item;
+            }
+        } else {
+            severe("KINDA: {}\n", .{kinda});
+            @panic("unhandled!");
+        }
     }
 }
 
