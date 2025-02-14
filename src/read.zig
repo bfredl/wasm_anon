@@ -40,3 +40,10 @@ pub fn blocktype(r: Reader) !defs.BlockType {
         return .{ .complex_idx = tidx };
     }
 }
+
+// throws on unknown prefix
+pub fn prefix(r: Reader) !defs.Prefixed {
+    const byte = try readu(r);
+    if (byte > defs.max_prefixed) return error.NotImplemented;
+    return @enumFromInt(byte);
+}

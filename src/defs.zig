@@ -344,6 +344,7 @@ pub fn category(comptime op: OpCode) Category {
     return .other;
 }
 
+// don't use _ to not blow up dispatch tables
 pub const Prefixed = enum(u32) {
     i32_trunc_sat_f32_s = 0,
     i32_trunc_sat_f32_u = 1,
@@ -365,5 +366,5 @@ pub const Prefixed = enum(u32) {
     table_grow = 15,
     table_size = 16,
     table_fill = 17,
-    _,
 };
+pub const max_prefixed = 17;

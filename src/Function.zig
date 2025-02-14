@@ -161,7 +161,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 if (try r.readByte() != 0) return error.InvalidFormat;
             },
             .prefixed => {
-                const code: defs.Prefixed = @enumFromInt(try readu(r));
+                const code: defs.Prefixed = try read.prefix(r);
                 dbg(":{s}", .{@tagName(code)});
                 switch (code) {
                     .memory_fill => {

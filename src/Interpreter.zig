@@ -374,6 +374,21 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 // TODO
                 // if (stack.nvals() != self.n_ret) return error.RuntimeError;
             },
+            .prefixed => {
+                const code: defs.Prefixed = try read.prefix(r);
+                switch (code) {
+                    inline else => |c| {
+                        if (@intFromEnum(c) < 8) {
+                            const dst = try stack.top();
+                            dst.* = try @field(ops.convert, @tagName(c))(dst.*);
+                        } else {
+                            // TODO: @tagname(foo) but "_" safe?
+                            severe("not implemented: prefixed:{s}, aborting!\n", .{@tagName(code)});
+                            return error.NotImplemented;
+                        }
+                    },
+                }
+            },
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 const name = @tagName(tag);
@@ -456,7 +471,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                         @memcpy(in.mem.items[ea..][0..@sizeOf(memtype)], std.mem.asBytes(&foo));
                     },
                     .other => {
-                        severe("{}: {s}\n", .{ pos, @tagName(inst) });
+                        severe("{}: not implemented: {s}\n", .{ pos, @tagName(inst) });
                         return error.NotImplemented;
                     },
                 }

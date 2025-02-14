@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) void {
             .{ "f64_cmp", 0 },
             .{ "labels", 0 },
             .{ "br_if", 0 },
+            .{ "conversions", 0 },
         };
         for (upstream_specs) |item| {
             const name, const fail = item;

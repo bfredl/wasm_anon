@@ -1,5 +1,6 @@
 const WASMError = error{WASMTrap};
 const std = @import("std");
+const dbg = std.debug.print;
 const StackValue = @import("./defs.zig").StackValue;
 
 fn utype(comptime t: type) type {
@@ -198,8 +199,18 @@ pub const frelop = struct {
 
 fn intFromFloat(inttype: type, fval: anytype) WASMError!inttype {
     if (std.math.isNan(fval)) return error.WASMTrap;
+    if (fval > std.math.maxInt(inttype)) return error.WASMTrap;
     const truncval = @trunc(fval);
     if (truncval >= std.math.maxInt(inttype) or truncval < std.math.minInt(inttype)) return error.WASMTrap;
+    return @intFromFloat(truncval);
+}
+
+fn intFromFloat_sat(inttype: type, fval: anytype) WASMError!inttype {
+    if (std.math.isNan(fval)) return 0;
+    const truncval = @trunc(fval);
+    const ftype = @TypeOf(fval);
+    if (truncval >= @as(ftype, std.math.maxInt(inttype))) return std.math.maxInt(inttype);
+    if (truncval < std.math.minInt(inttype)) return std.math.minInt(inttype);
     return @intFromFloat(truncval);
 }
 
@@ -279,5 +290,29 @@ pub const convert = struct {
     }
     pub fn f64_reinterpret_i64(val: StackValue) WASMError!StackValue {
         return .{ .f64 = @bitCast(val.i64) };
+    }
+    pub fn i32_trunc_sat_f32_s(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = try intFromFloat_sat(i32, val.f32) };
+    }
+    pub fn i32_trunc_sat_f32_u(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = @bitCast(try intFromFloat_sat(u32, val.f32)) };
+    }
+    pub fn i32_trunc_sat_f64_s(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = try intFromFloat_sat(i32, val.f64) };
+    }
+    pub fn i32_trunc_sat_f64_u(val: StackValue) WASMError!StackValue {
+        return .{ .i32 = @bitCast(try intFromFloat_sat(u32, val.f64)) };
+    }
+    pub fn i64_trunc_sat_f32_s(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = try intFromFloat_sat(i64, val.f32) };
+    }
+    pub fn i64_trunc_sat_f32_u(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = @bitCast(try intFromFloat_sat(u64, val.f32)) };
+    }
+    pub fn i64_trunc_sat_f64_s(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = try intFromFloat_sat(i64, val.f64) };
+    }
+    pub fn i64_trunc_sat_f64_u(val: StackValue) WASMError!StackValue {
+        return .{ .i64 = @bitCast(try intFromFloat_sat(u64, val.f64)) };
     }
 };
