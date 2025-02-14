@@ -238,6 +238,14 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 const val = try stack.pop();
                 in.globals[idx] = val;
             },
+            .memory_grow => {
+                if (try r.readByte() != 0) return error.InvalidFormat;
+                const size_res = try stack.top();
+                const oldsize = in.mem.items.len;
+                // TODO: validate total size doesn't exceed mod.mem_limits.max, or addressable size limit (2**32 ?)
+                try in.mem.appendNTimes(0, 0x10000 * @as(usize, @intCast(size_res.i32)));
+                size_res.i32 = @intCast(oldsize / 0x10000);
+            },
             .loop => {
                 c_ip += 1;
                 _ = try read.blocktype(r);
