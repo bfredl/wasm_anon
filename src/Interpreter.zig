@@ -342,12 +342,6 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     return error.RuntimeError;
                 }
 
-                // let's crawl in the mud first
-                if (stack.frames.items.len > 5) {
-                    severe("not ready for recursion!\n", .{});
-                    return error.NotImplemented;
-                }
-
                 // save current state as a frame
                 // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
                 try stack.push_frame(@intCast(r.context.pos), c_ip, func);
