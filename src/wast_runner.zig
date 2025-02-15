@@ -57,14 +57,14 @@ pub fn main() !u8 {
 
     var params: std.ArrayList(StackValue) = .init(allocator);
 
-    const AssertKind = enum { module, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
+    const Toplevel = enum { module, invoke, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
 
         const start_pos = t.pos;
         _ = try t.expect(.LeftParen);
-        const kind = try t.expectAtomChoice(AssertKind);
+        const kind = try t.expectAtomChoice(Toplevel);
         if (kind == .module) {
             if (did_mod) {
                 in.deinit();
@@ -89,8 +89,10 @@ pub fn main() !u8 {
             try t.skip(1);
             continue;
         }
-        _ = try t.expect(.LeftParen);
-        try t.expectAtom("invoke");
+        if (kind != .invoke) {
+            _ = try t.expect(.LeftParen);
+            try t.expectAtom("invoke");
+        }
         const name_tok = try t.expect(.String);
         const name = try t.simple_string(name_tok);
 
@@ -145,9 +147,12 @@ pub fn main() !u8 {
                 _ = try t.expect(.String);
                 expected_trap = true;
             },
+            .invoke => {},
             .assert_invalid, .assert_malformed, .module => unreachable,
         }
-        _ = try t.expect(.RightParen);
+        if (kind != .invoke) {
+            _ = try t.expect(.RightParen);
+        }
 
         if (parse_fail) {
             // aha!
@@ -173,7 +178,13 @@ pub fn main() !u8 {
             }
         };
 
-        if (!expected_trap) {
+        if (kind == .invoke) {
+            if (maybe_n_res == null) {
+                // I think this should be a failure as well?
+                dbg("{s}(...): TRAP in invoke\n", .{name});
+                failures += 1;
+            }
+        } else if (!expected_trap) {
             if (maybe_n_res) |n_res| {
                 for (expected_type[0..n_res], expected_ret[0..n_res], 0..) |typ, val, i| {
                     switch (typ) {

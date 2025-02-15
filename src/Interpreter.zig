@@ -396,6 +396,20 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .prefixed => {
                 const code: defs.Prefixed = try read.prefix(r);
                 switch (code) {
+                    .memory_copy => {
+                        if (try r.readByte() != 0) return error.InvalidFormat;
+                        if (try r.readByte() != 0) return error.InvalidFormat;
+                        const n: u32 = @bitCast((try stack.pop()).i32);
+                        const s: u32 = @bitCast((try stack.pop()).i32);
+                        const d: u32 = @bitCast((try stack.pop()).i32);
+                        const m = in.mem.items;
+                        if (@as(u64, s) + n > m.len or @as(u64, d) + n > m.len) return error.WASMTrap;
+                        if (d <= s) {
+                            std.mem.copyForwards(u8, m[d..][0..n], m[s..][0..n]);
+                        } else {
+                            std.mem.copyBackwards(u8, m[d..][0..n], m[s..][0..n]);
+                        }
+                    },
                     inline else => |c| {
                         if (@intFromEnum(c) < 8) {
                             const dst = try stack.top();

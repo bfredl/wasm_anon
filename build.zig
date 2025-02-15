@@ -76,6 +76,7 @@ pub fn build(b: *std.Build) void {
             .{ "br_if", 0 },
             .{ "conversions", 6 },
             .{ "memory", 0 },
+            .{ "memory_copy", 0 },
             .{ "call", 2 },
         };
         for (upstream_specs) |item| {
