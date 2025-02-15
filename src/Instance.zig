@@ -4,6 +4,7 @@ const Module = @import("./Module.zig");
 const defs = @import("./defs.zig");
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
+const severe = std.debug.print;
 
 mod: *Module,
 mem: std.ArrayList(u8),

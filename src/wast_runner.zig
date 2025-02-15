@@ -41,19 +41,15 @@ pub fn main() !u8 {
     var t: Tokenizer = .{ .str = buf };
     errdefer t.fail_pos();
 
-    _ = try t.expect(.LeftParen);
-    try t.expectAtom("module");
+    var did_mod = false;
+    // mod is "almost always" available
+    var mod: wasm_shelf.Module = undefined;
+    var in: wasm_shelf.Instance = undefined;
 
-    try t.skip(1);
-
-    const mod_source = buf[0..t.pos];
-    const mod_code = try wat2wasm(mod_source, allocator);
-
-    var mod = try wasm_shelf.Module.parse(mod_code, allocator);
-    defer mod.deinit();
-
-    var in = try wasm_shelf.Instance.init(&mod);
-    defer in.deinit();
+    defer if (did_mod) {
+        in.deinit();
+        mod.deinit();
+    };
 
     var cases: u32 = 0;
     var failures: u32 = 0;
@@ -61,13 +57,32 @@ pub fn main() !u8 {
 
     var params: std.ArrayList(StackValue) = .init(allocator);
 
-    const AssertKind = enum { assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
+    const AssertKind = enum { module, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});
 
+        const start_pos = t.pos;
         _ = try t.expect(.LeftParen);
         const kind = try t.expectAtomChoice(AssertKind);
+        if (kind == .module) {
+            if (did_mod) {
+                in.deinit();
+                mod.deinit();
+            }
+            try t.skip(1);
+
+            const mod_source = buf[start_pos..t.pos];
+            const mod_code = try wat2wasm(mod_source, allocator);
+
+            mod = try .parse(mod_code, allocator);
+            in = try .init(&mod);
+            did_mod = true;
+            continue;
+        } else {
+            if (!did_mod) return error.NotImplemented;
+        }
+
         if (kind == .assert_invalid or kind == .assert_malformed) {
             // invalid already as text formats. we need separate tests for invalid binary formats..
             unapplicable += 1;
@@ -130,7 +145,7 @@ pub fn main() !u8 {
                 _ = try t.expect(.String);
                 expected_trap = true;
             },
-            .assert_invalid, .assert_malformed => unreachable,
+            .assert_invalid, .assert_malformed, .module => unreachable,
         }
         _ = try t.expect(.RightParen);
 

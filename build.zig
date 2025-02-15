@@ -75,6 +75,7 @@ pub fn build(b: *std.Build) void {
             .{ "local_tee", 0 },
             .{ "br_if", 0 },
             .{ "conversions", 6 },
+            .{ "memory", 0 },
         };
         for (upstream_specs) |item| {
             const name, const fail = item;

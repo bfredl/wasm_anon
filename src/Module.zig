@@ -32,7 +32,7 @@ fn readLimits(r: Reader) !Limits {
 allocator: std.mem.Allocator,
 raw: []const u8,
 // TODO: {.ptr = undefined, .size = 0} would be a useful idiom..
-funcs: []Function = undefined,
+funcs: []Function = &.{},
 types: []u32 = undefined,
 
 export_off: u32 = 0,
@@ -103,7 +103,11 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
 }
 
 pub fn deinit(self: *Module) void {
-    self.allocator.free(self.funcs);
+    // ?[]Thingie is annoying when you could use .{.data = static, .len = 0}
+    // this shalt be a common pattern somehow. Perhaps a wrapping allocator unless Allocator wrapper is smart already.
+    if (self.funcs.len > 0) {
+        self.allocator.free(self.funcs);
+    }
 }
 
 pub fn type_section(self: *Module, r: Reader) !void {
@@ -193,7 +197,7 @@ pub fn lookup_export(self: *Module, name: []const u8) !?Export {
 
 fn function_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
-    self.funcs = try self.allocator.alloc(Function, len);
+    if (len > 0) self.funcs = try self.allocator.alloc(Function, len);
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
         const idx = try readu(r);

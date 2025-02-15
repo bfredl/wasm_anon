@@ -169,7 +169,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
         var label_target: ?u32 = null;
         switch (inst) {
             .unreachable_ => {
-                return error.WasmTRAP;
+                return error.WASMTrap;
             },
             .drop => {
                 _ = try stack.pop();
@@ -245,6 +245,11 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 // TODO: validate total size doesn't exceed mod.mem_limits.max, or addressable size limit (2**32 ?)
                 try in.mem.appendNTimes(0, 0x10000 * @as(usize, @intCast(size_res.i32)));
                 size_res.i32 = @intCast(oldsize / 0x10000);
+            },
+            .memory_size => {
+                if (try r.readByte() != 0) return error.InvalidFormat;
+                const size: i32 = @intCast(in.mem.items.len / 0x10000);
+                try stack.push(.{ .i32 = size });
             },
             .loop => {
                 c_ip += 1;
@@ -472,7 +477,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                         const dst = try stack.top();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
                         const memtype = defs.memtype(tag);
-                        if (ea + @sizeOf(memtype) >= in.mem.items.len) return error.WasmTRAP;
+                        if (ea + @sizeOf(memtype) > in.mem.items.len) return error.WASMTrap;
                         var foo: memtype = undefined;
                         @memcpy(std.mem.asBytes(&foo), in.mem.items[ea..][0..@sizeOf(memtype)]);
                         @field(dst, name[0..3]) = foo;
@@ -485,7 +490,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                         const dst = try stack.pop();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
                         const memtype = defs.memtype(tag);
-                        if (ea + @sizeOf(memtype) >= in.mem.items.len) return error.WasmTRAP;
+                        if (ea + @sizeOf(memtype) > in.mem.items.len) return error.WASMTrap;
                         const src = @field(val, name[0..3]);
                         const foo: memtype = if (@typeInfo(memtype) == .int) @truncate(src) else src;
                         @memcpy(in.mem.items[ea..][0..@sizeOf(memtype)], std.mem.asBytes(&foo));
