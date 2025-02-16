@@ -157,7 +157,7 @@ pub fn main() !u8 {
         if (parse_fail) {
             // aha!
             failures += 1;
-            dbg("\n", .{});
+            dbg("parse??\n", .{});
             continue;
         }
         if (kind == .assert_exhaustion) {
@@ -435,7 +435,11 @@ const Tokenizer = struct {
             return -@as(ityp, @bitCast(try std.fmt.parseInt(utyp, text[3..], 16)));
         }
 
-        return try std.fmt.parseInt(ityp, text, 10);
+        if (text[0] == '-') {
+            return std.fmt.parseInt(ityp, text, 10);
+        } else {
+            return @bitCast(try std.fmt.parseInt(utyp, text, 10));
+        }
     }
 
     fn nandesc(ftyp: type, desc: []const u8) !if (ftyp == f64) u64 else u32 {

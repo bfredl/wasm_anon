@@ -124,6 +124,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 const idx = try readLeb(r, u32);
                 dbg(" {}:{}", .{ tblidx, idx });
             },
+            .nop, .unreachable_ => {},
             .i32_const => {
                 const val = try readLeb(r, i32);
                 dbg(" {}", .{val});

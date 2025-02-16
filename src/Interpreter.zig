@@ -171,6 +171,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .unreachable_ => {
                 return error.WASMTrap;
             },
+            .nop => {},
             .drop => {
                 _ = try stack.pop();
             },
@@ -396,6 +397,16 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .prefixed => {
                 const code: defs.Prefixed = try read.prefix(r);
                 switch (code) {
+                    .memory_fill => {
+                        if (try r.readByte() != 0) return error.InvalidFormat;
+                        const n: u32 = @bitCast((try stack.pop()).i32);
+                        const val: u32 = @bitCast((try stack.pop()).i32);
+                        const d: u32 = @bitCast((try stack.pop()).i32);
+                        const m = in.mem.items;
+                        const truncval: u8 = @truncate(val);
+                        if (@as(u64, d) + n > m.len) return error.WASMTrap;
+                        @memset(m[d..][0..n], truncval);
+                    },
                     .memory_copy => {
                         if (try r.readByte() != 0) return error.InvalidFormat;
                         if (try r.readByte() != 0) return error.InvalidFormat;
