@@ -78,6 +78,8 @@ pub fn build(b: *std.Build) void {
             .{ "memory", 0 },
             .{ "memory_copy", 0 },
             .{ "memory_fill", 0 },
+            .{ "load", 0 },
+            .{ "store", 0 },
             .{ "call", 2 },
         };
         for (upstream_specs) |item| {

@@ -76,7 +76,7 @@ pub fn main() !u8 {
             const mod_code = try wat2wasm(mod_source, allocator);
 
             mod = try .parse(mod_code, allocator);
-            in = try .init(&mod);
+            in = try .init(&mod, null);
             did_mod = true;
             continue;
         } else {

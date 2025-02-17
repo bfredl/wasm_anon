@@ -32,7 +32,7 @@ pub fn main() !void {
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
 
-    var in = try wasm_shelf.Instance.init(&mod);
+    var in = try wasm_shelf.Instance.init(&mod, null);
     defer in.deinit();
 
     if (argv.len == 3) return usage();

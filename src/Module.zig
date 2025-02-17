@@ -13,6 +13,8 @@ const severe = std.debug.print;
 const defs = @import("./defs.zig");
 const Module = @This();
 
+const ImportTable = @import("./ImportTable.zig");
+
 const read = @import("./read.zig");
 const readu = read.readu;
 const readName = read.readName;
@@ -38,8 +40,13 @@ types: []u32 = undefined,
 export_off: u32 = 0,
 data_off: u32 = 0,
 
-n_globals: u32 = 0,
+// TODO: maybe not even parse "imports" until justin time?
+n_globals_import: u32 = 0,
+n_globals_internal: u32 = 0,
 globals_off: u32 = 0,
+
+n_imports: u32 = 0,
+imports_off: u32 = 0,
 
 mem_limits: Limits = .{ .min = 0, .max = null },
 
@@ -78,7 +85,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .function => try self.function_section(r),
             .memory => try self.memory_section(r),
             .global => try self.global_section(r),
-            .import => try import_section(r),
+            .import => try self.import_section(r),
             .export_ => {
                 self.export_off = @intCast(fbs.pos);
                 try export_section_dbg(r);
@@ -134,9 +141,11 @@ pub fn type_section(self: *Module, r: Reader) !void {
     }
 }
 
-pub fn import_section(r: Reader) !void {
+pub fn import_section(self: *Module, r: Reader) !void {
+    self.imports_off = @intCast(r.context.pos);
     const len = try readu(r);
     dbg("IMPORTS: {}\n", .{len});
+    self.n_imports = len;
     for (0..len) |_| {
         const mod = try readName(r);
         const name = try readName(r);
@@ -160,6 +169,7 @@ pub fn import_section(r: Reader) !void {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
                 const mut = (try r.readByte()) > 0;
                 dbg("global {} {}\n", .{ typ, mut });
+                self.n_globals_import += 1;
             },
         }
     }
@@ -248,19 +258,54 @@ pub fn init_data(self: *Module, mem: []u8) !void {
 pub fn global_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("GLOBALS: {}\n", .{len});
-    self.n_globals = len;
+    self.n_globals_internal = len;
     self.globals_off = @intCast(r.context.pos);
 }
 
-pub fn init_globals(self: *Module, globals: []defs.StackValue) !void {
-    var fbs = self.fbs_at(self.globals_off);
+pub fn init_globals(self: *Module, globals: []defs.StackValue, imports: ?ImportTable) !void {
+    var fbs = self.fbs_at(self.imports_off);
     const r = fbs.reader();
+    const len = try readu(r);
 
-    for (0..self.n_globals) |i| {
+    for (0..len) |i| {
+        const mod = try readName(r);
+        const name = try readName(r);
+        dbg("{s}:{s} = ", .{ mod, name });
+        const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
+        const imp = imports orelse return error.InvalidArgument;
+        switch (kind) {
+            .func => {
+                const idx = try readu(r);
+                _ = idx;
+            },
+            .table => {
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
+                const limits = try readLimits(r);
+                _ = typ;
+                _ = limits;
+            },
+            .mem => {
+                const limits = try readLimits(r);
+                _ = limits;
+            },
+            .global => {
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
+                const mut = (try r.readByte()) > 0;
+                _ = mut;
+
+                const item = imp.globals.get(name) orelse return error.MissingImport;
+                if (typ != item.typ) return error.ImportTypeMismatch;
+                globals[i] = .{ .indir = item.ptr };
+            },
+        }
+    }
+
+    r.context.pos = self.globals_off;
+    for (0..self.n_globals_internal) |i| {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
-        globals[i] = try Interpreter.eval_expr(self, r, typ);
+        globals[self.n_globals_import + i] = try Interpreter.eval_expr(self, r, typ);
     }
 }
 

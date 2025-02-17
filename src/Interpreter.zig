@@ -232,12 +232,12 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             },
             .global_get => {
                 const idx = try readu(r);
-                try stack.push(in.globals[idx]);
+                try stack.push(in.get_global(idx).*);
             },
             .global_set => {
                 const idx = try readu(r);
                 const val = try stack.pop();
-                in.globals[idx] = val;
+                in.get_global(idx).* = val;
             },
             .memory_grow => {
                 if (try r.readByte() != 0) return error.InvalidFormat;

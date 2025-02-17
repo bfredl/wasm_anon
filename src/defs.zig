@@ -5,6 +5,7 @@ pub const StackValue = extern union {
     f32: f32,
     f64: f64,
     ref: u32,
+    indir: *StackValue,
 
     pub fn default(valtype: ValType) ?StackValue {
         return switch (valtype) {

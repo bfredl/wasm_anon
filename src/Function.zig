@@ -149,7 +149,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
             .global_get, .global_set => {
                 const idx = try readu(r);
                 dbg(" {}", .{idx});
-                if (idx >= mod.n_globals) return error.InvalidFormat;
+                if (idx >= mod.n_globals_import + mod.n_globals_internal) return error.InvalidFormat;
             },
             .drop, .select => {},
             .select_t => {
