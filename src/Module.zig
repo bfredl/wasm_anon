@@ -295,7 +295,7 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue, imports: ?ImportT
 
                 const item = imp.globals.get(name) orelse return error.MissingImport;
                 if (typ != item.typ) return error.ImportTypeMismatch;
-                globals[i] = .{ .indir = item.ptr };
+                globals[i] = .{ .indir = item.ref };
             },
         }
     }

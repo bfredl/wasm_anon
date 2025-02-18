@@ -46,6 +46,13 @@ pub fn main() !u8 {
     var mod: wasm_shelf.Module = undefined;
     var in: wasm_shelf.Instance = undefined;
 
+    var imports: wasm_shelf.ImportTable = .init(allocator);
+
+    var i32val: StackValue = .{ .i32 = 666 };
+    var i64val: StackValue = .{ .i64 = 666 };
+    try imports.addGlobal("global_i32", &i32val, .i32);
+    try imports.addGlobal("global_i64", &i64val, .i64);
+
     defer if (did_mod) {
         in.deinit();
         mod.deinit();
@@ -76,7 +83,7 @@ pub fn main() !u8 {
             const mod_code = try wat2wasm(mod_source, allocator);
 
             mod = try .parse(mod_code, allocator);
-            in = try .init(&mod, null);
+            in = try .init(&mod, imports);
             did_mod = true;
             continue;
         } else {
