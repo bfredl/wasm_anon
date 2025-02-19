@@ -81,6 +81,7 @@ pub fn build(b: *std.Build) void {
             .{ "load", 0 },
             .{ "store", 0 },
             .{ "call", 2 },
+            .{ "global", 0 },
         };
         for (upstream_specs) |item| {
             const name, const fail = item;

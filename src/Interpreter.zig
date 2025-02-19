@@ -131,7 +131,7 @@ pub fn init_locals(stack: *Interpreter, r: Reader) !void {
 
 // TODO: this should be made flexible enough to allow ie a nested callback from a a host function
 // TODO: use stack.values to pass args/ret ?
-pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue, skip_locals: bool) !u32 {
+pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue) !u32 {
     const control = try self.ensure_parsed(mod);
 
     // NB: in the spec all locals are bundled into a "frame" object as a single
@@ -145,7 +145,7 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     var fbs = mod.fbs_at(self.codeoff);
     const r = fbs.reader();
 
-    if (!skip_locals) try stack.init_locals(r);
+    try stack.init_locals(r);
     stack.enter_frame();
     // entire body is implicitly a block, producing the return values
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_ret));
@@ -540,34 +540,27 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
     }
 }
 
-// evaluate expression at "off". This is like a function body but without locals for some reason
-// This assumes that repeated instantiation of the same module with complex initializers is rare,
-// i e you would likely use "start" or call to a real function with actual locals. Thus we don't save
-// these parsed pseudo-functions
-pub fn eval_expr(mod: *Module, r: Reader, typ: defs.ValType) !StackValue {
-    const savepos = r.context.pos;
+pub fn eval_constant_expr(r: Reader, typ: defs.ValType, preglobals: []const StackValue) !StackValue {
     // shortcut: `expr` is just "i??.const VAL end"
-    quick_try: {
-        const init_typ: defs.OpCode = @enumFromInt(try r.readByte());
-        _ = typ;
-        const val: StackValue = switch (init_typ) {
-            .i32_const => .{ .i32 = try read.readLeb(r, i32) },
-            .i64_const => .{ .i64 = try read.readLeb(r, i64) },
-            .f32_const => .{ .f32 = try read.readf(r, f32) },
-            .f64_const => .{ .f64 = try read.readf(r, f64) },
-            else => break :quick_try,
-        };
-        if (try r.readByte() != 0x0b) break :quick_try;
-        return val;
-    }
-    if (true) return error.NotImplemented;
-
-    r.context.pos = savepos;
-
-    var self: Function = .{ .n_params = 0, .n_ret = 1, .codeoff = savepos };
-    self.parse_body(mod, r, 0);
-    defer self.deinit();
-
-    const init_in: *Instance = undefined;
-    return self.execute(mod, init_in, &.{}, true);
+    const eval = try r.readByte();
+    const init_typ: defs.OpCode = @enumFromInt(eval);
+    _ = typ;
+    const val: StackValue = val: switch (init_typ) {
+        .i32_const => .{ .i32 = try read.readLeb(r, i32) },
+        .i64_const => .{ .i64 = try read.readLeb(r, i64) },
+        .f32_const => .{ .f32 = try read.readf(r, f32) },
+        .f64_const => .{ .f64 = try read.readf(r, f64) },
+        .ref_null => {
+            _ = try r.readByte();
+            break :val .{ .ref = 0 };
+        },
+        .global_get => {
+            const idx = try readu(r);
+            if (idx >= preglobals.len) return error.InvalidFormat;
+            break :val preglobals[idx].indir.*;
+        },
+        else => return error.InvalidFormat,
+    };
+    if (try r.readByte() != 0x0b) return error.InvalidFormat;
+    return val;
 }

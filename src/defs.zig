@@ -270,6 +270,8 @@ pub const OpCode = enum(u8) {
     i64_extend16_s = 0xC3,
     i64_extend32_s = 0xC4,
 
+    ref_null = 0xD0,
+
     prefixed = 0xFC,
 };
 
