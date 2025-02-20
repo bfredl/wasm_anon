@@ -127,7 +127,7 @@ pub fn main() !u8 {
 
         cases += 1;
 
-        const max_ret = 2;
+        const max_ret = 4;
         var expected_trap = false;
         var expected_n_ret: u32 = 0;
         var expected_ret: [max_ret]StackValue = undefined;
@@ -177,6 +177,8 @@ pub fn main() !u8 {
         const maybe_n_res = in.execute(sym.idx, params.items, &res) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
+                    dbg("NYI\n", .{});
+                    if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace.*);
                     failures += 1;
                     continue;
                 },

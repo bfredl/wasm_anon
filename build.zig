@@ -74,6 +74,7 @@ pub fn build(b: *std.Build) void {
             .{ "local_set", 0 },
             .{ "local_tee", 0 },
             .{ "br_if", 0 },
+            .{ "loop", 0 },
             .{ "conversions", 6 },
             .{ "memory", 0 },
             .{ "memory_copy", 0 },

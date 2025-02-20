@@ -1,5 +1,6 @@
 const std = @import("std");
 const defs = @import("./defs.zig");
+const Module = @import("./Module.zig");
 pub const Reader = std.io.FixedBufferStream([]const u8).Reader;
 
 pub fn readLeb(r: Reader, comptime T: type) !T {
@@ -29,7 +30,29 @@ pub fn peekByte(r: Reader) u8 {
     return r.context.buffer[r.context.pos];
 }
 
-pub fn blocktype(r: Reader) !defs.BlockType {
+pub const BlockType = union(enum) {
+    simple: defs.ValType,
+    complex_idx: u32,
+
+    // args, results
+    pub fn arity(self: BlockType, mod: *const Module) !struct { u16, u16 } {
+        switch (self) {
+            .simple => |vt| return .{ 0, if (vt == .void) 0 else 1 },
+            .complex_idx => |idx| {
+                var fbs_type = mod.fbs_at(mod.types[idx]);
+                const r_type = fbs_type.reader();
+                const n_params: u16 = @intCast(try readu(r_type));
+                for (0..n_params) |_| {
+                    _ = try r_type.readByte(); // TEMP hack: while we don't validate runtime args
+                }
+                const n_ret: u16 = @intCast(try readu(r_type));
+                return .{ n_params, n_ret };
+            },
+        }
+    }
+};
+
+pub fn blocktype(r: Reader) !BlockType {
     // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
     const nextByte = peekByte(r);
     if ((nextByte & 0xc0) == 0x40) {

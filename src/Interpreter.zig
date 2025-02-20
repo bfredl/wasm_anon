@@ -283,7 +283,8 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .block => {
                 c_ip += 1;
                 const typ = try read.blocktype(r);
-                const n_results = try typ.results();
+                const n_args, const n_results = try typ.arity(in.mod);
+                if (n_args > 0) return error.NotImplemented;
                 // target: right after "loop"
                 if (control[c_ip].off != pos) @panic("MANIC FEAR");
                 try stack.push_label(control[c_ip].jmp_t, n_results);
@@ -291,7 +292,8 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .if_ => {
                 c_ip += 1;
                 const typ = try read.blocktype(r);
-                const n_results = try typ.results();
+                const n_args, const n_results = try typ.arity(in.mod);
+                if (n_args > 0) return error.NotImplemented;
                 if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
                 const val = try stack.pop();
                 if (val.i32 != 0) {
