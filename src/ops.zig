@@ -1,7 +1,8 @@
-const WASMError = error{WASMTrap};
 const std = @import("std");
+const defs = @import("./defs.zig");
 const dbg = std.debug.print;
-const StackValue = @import("./defs.zig").StackValue;
+const StackValue = defs.StackValue;
+const WASMError = defs.WASMError;
 
 fn utype(comptime t: type) type {
     return if (t == i32) u32 else if (t == i64) u64 else unreachable;

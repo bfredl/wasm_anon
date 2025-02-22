@@ -161,6 +161,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
     var c_ip: u32 = 0;
     var func = entry_func;
     var control = func.control.?;
+    const mod = in.mod;
 
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
@@ -254,9 +255,11 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             },
             .loop => {
                 c_ip += 1;
-                _ = try read.blocktype(r);
+                const typ = try read.blocktype(r);
+                const n_args, const n_results = try typ.arity(mod);
+                _ = n_results;
                 // target: right after "loop"
-                try stack.push_label(c_ip, 0);
+                try stack.push_label(c_ip, n_args);
             },
             .br => {
                 label_target = try readu(r);
@@ -283,7 +286,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .block => {
                 c_ip += 1;
                 const typ = try read.blocktype(r);
-                const n_args, const n_results = try typ.arity(in.mod);
+                const n_args, const n_results = try typ.arity(mod);
                 if (n_args > 0) return error.NotImplemented;
                 // target: right after "loop"
                 if (control[c_ip].off != pos) @panic("MANIC FEAR");
@@ -292,7 +295,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             .if_ => {
                 c_ip += 1;
                 const typ = try read.blocktype(r);
-                const n_args, const n_results = try typ.arity(in.mod);
+                const n_args, const n_results = try typ.arity(mod);
                 if (n_args > 0) return error.NotImplemented;
                 if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
                 const val = try stack.pop();
@@ -325,22 +328,27 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 label_target = @intCast(stack.labels.items.len - 1 - stack.frame_label);
             },
             .call, .call_indirect => {
-                const idx = if (inst == .call_indirect) funcidx: {
+                const idx, const chktyp = if (inst == .call_indirect) funcidx: {
                     const tblidx = try readLeb(r, u32);
                     _ = tblidx; // clown face emoji
                     const typidx = try readLeb(r, u32);
                     const eidx: u32 = @bitCast((try stack.pop()).i32);
-                    if (eidx >= in.mod.funcref_table.len) return error.WASMTrap;
-                    const funcidx = in.mod.funcref_table[eidx];
-                    if (funcidx >= in.mod.funcs.len) return error.WASMTrap;
-                    if (typidx != in.mod.funcs[funcidx].typeidx) return error.WASMTrap;
-                    break :funcidx funcidx;
-                } else try readLeb(r, u32);
+                    if (eidx >= mod.funcref_table.len) return error.WASMTrap;
+                    const funcidx = mod.funcref_table[eidx];
+                    break :funcidx .{ funcidx, typidx };
+                } else .{ try readLeb(r, u32), null };
 
-                if (idx > in.mod.funcs.len) @panic("SHAKING FEAR");
+                if (idx >= mod.n_funcs_import + mod.funcs_internal.len) @panic("SHAKING FEAR");
+                if (idx < mod.n_funcs_import) {
+                    return error.NotImplemented;
+                }
 
-                const called = &in.mod.funcs[idx];
-                const called_control = try called.ensure_parsed(in.mod);
+                const called = &mod.funcs_internal[idx - mod.n_funcs_import];
+                if (chktyp) |typidx| {
+                    if (typidx != called.typeidx) return error.WASMTrap;
+                }
+
+                const called_control = try called.ensure_parsed(mod);
                 if (stack.nvals() < called.n_params) {
                     return error.RuntimeError;
                 }

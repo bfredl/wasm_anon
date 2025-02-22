@@ -10,6 +10,7 @@ const severe = std.debug.print;
 mod: *Module,
 mem: std.ArrayList(u8),
 globals_maybe_indir: []defs.StackValue,
+funcs_imported: []defs.HostFunc,
 
 pub fn get_global(self: *Instance, idx: u32) *defs.StackValue {
     const g = &self.globals_maybe_indir[idx];
@@ -21,6 +22,7 @@ pub fn init(mod: *Module, imports: ?ImportTable) !Instance {
         .mod = mod,
         .mem = .init(mod.allocator),
         .globals_maybe_indir = try mod.allocator.alloc(defs.StackValue, mod.n_globals_import + mod.n_globals_internal),
+        .funcs_imported = try mod.allocator.alloc(defs.HostFunc, mod.n_funcs_import),
     };
 
     try mod.init_globals(self.globals_maybe_indir, imports);
@@ -41,8 +43,8 @@ pub fn deinit(self: *Instance) void {
 }
 
 pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue) !u32 {
-    if (idx >= self.mod.funcs.len) return error.OutOfRange;
-    const func = &self.mod.funcs[idx];
+    if (idx < self.mod.n_funcs_import or idx >= self.mod.n_imports + self.mod.funcs_internal.len) return error.OutOfRange;
+    const func = &self.mod.funcs_internal[idx - self.mod.n_funcs_import];
 
     var stack: Interpreter = .init(self.mod.allocator);
     defer stack.deinit();

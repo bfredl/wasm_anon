@@ -19,6 +19,8 @@ pub const StackValue = extern union {
     }
 };
 
+pub const WASMError = error{WASMTrap};
+
 pub const SectionKind = enum(u8) {
     custom = 0,
     type = 1,
@@ -371,3 +373,10 @@ pub const Prefixed = enum(u32) {
     table_fill = 17,
 };
 pub const max_prefixed = 17;
+
+pub const HostFunc = struct {
+    callback: *fn (args_ret: []StackValue, data: *anyopaque) WASMError!void,
+    data: *anyopaque,
+    n_args: u16,
+    n_res: u16,
+};

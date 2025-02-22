@@ -47,11 +47,12 @@ pub fn main() !u8 {
     var in: wasm_shelf.Instance = undefined;
 
     var imports: wasm_shelf.ImportTable = .init(allocator);
+    defer imports.deinit();
 
     var i32val: StackValue = .{ .i32 = 666 };
     var i64val: StackValue = .{ .i64 = 666 };
-    try imports.addGlobal("global_i32", &i32val, .i32);
-    try imports.addGlobal("global_i64", &i64val, .i64);
+    try imports.add_global("global_i32", &i32val, .i32);
+    try imports.add_global("global_i64", &i64val, .i64);
 
     defer if (did_mod) {
         in.deinit();
@@ -65,6 +66,8 @@ pub fn main() !u8 {
     var params: std.ArrayList(StackValue) = .init(allocator);
 
     const Toplevel = enum { module, invoke, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
+
+    // if (specname) |nam| dbg("time to {s}: \n", .{nam});
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});

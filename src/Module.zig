@@ -33,8 +33,9 @@ fn readLimits(r: Reader) !Limits {
 
 allocator: std.mem.Allocator,
 raw: []const u8,
+n_funcs_import: u32 = 0,
 // TODO: {.ptr = undefined, .size = 0} would be a useful idiom..
-funcs: []Function = &.{},
+funcs_internal: []Function = &.{},
 types: []u32 = undefined,
 
 export_off: u32 = 0,
@@ -112,8 +113,8 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
 pub fn deinit(self: *Module) void {
     // ?[]Thingie is annoying when you could use .{.data = static, .len = 0}
     // this shalt be a common pattern somehow. Perhaps a wrapping allocator unless Allocator wrapper is smart already.
-    if (self.funcs.len > 0) {
-        self.allocator.free(self.funcs);
+    if (self.funcs_internal.len > 0) {
+        self.allocator.free(self.funcs_internal);
     }
 }
 
@@ -155,6 +156,7 @@ pub fn import_section(self: *Module, r: Reader) !void {
             .func => {
                 const idx = try readu(r);
                 dbg("func {}\n", .{idx});
+                self.n_funcs_import += 1;
             },
             .table => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
@@ -207,11 +209,11 @@ pub fn lookup_export(self: *Module, name: []const u8) !?Export {
 
 fn function_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
-    if (len > 0) self.funcs = try self.allocator.alloc(Function, len);
+    if (len > 0) self.funcs_internal = try self.allocator.alloc(Function, len);
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
         const idx = try readu(r);
-        self.funcs[i] = .{ .typeidx = idx };
+        self.funcs_internal[i] = .{ .typeidx = idx };
     }
     dbg("...\n", .{});
 }
@@ -353,7 +355,7 @@ pub fn code_section(self: *Module, r: Reader) !void {
         const size = try readu(r);
         dbg("CODE with size {}\n", .{size});
         const endpos = r.context.pos + size;
-        self.funcs[i].codeoff = @intCast(r.context.pos);
+        self.funcs_internal[i].codeoff = @intCast(r.context.pos);
 
         // if(force_eager)
         // try self.funcs[i].parse(self, r);
