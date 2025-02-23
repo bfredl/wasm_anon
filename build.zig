@@ -86,17 +86,24 @@ pub fn build(b: *std.Build) void {
         };
         for (upstream_specs) |item| {
             const name, const fail = item;
-            const spec_step = b.addRunArtifact(wast_exe);
-            spec_step.addFileArg(spec_dep.path(b.fmt("test/core/{s}.wast", .{name})));
-            spec_step.addArg(name);
-            spec_step.addArg(b.fmt("{}", .{fail}));
-            run_spec_tests.dependOn(&spec_step.step);
+            add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, fail);
         }
     }
+
+    add_spectest(b, run_spec_tests, wast_exe, b.path("test/misc.wast"), "misc", 0);
+    add_spectest(b, run_spec_tests, wast_exe, b.path("test/loop.wast"), "loop", 0);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
+}
+
+fn add_spectest(b: *std.Build, test_step: *std.Build.Step, wast_exe: *std.Build.Step.Compile, file: std.Build.LazyPath, name: []const u8, fail: u32) void {
+    const spec_step = b.addRunArtifact(wast_exe);
+    spec_step.addFileArg(file);
+    spec_step.addArg(name);
+    spec_step.addArg(b.fmt("{}", .{fail}));
+    test_step.dependOn(&spec_step.step);
 }
