@@ -87,10 +87,8 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .memory => try self.memory_section(r),
             .global => try self.global_section(r),
             .import => try self.import_section(r),
-            .export_ => {
-                self.export_off = @intCast(fbs.pos);
-                try export_section_dbg(r);
-            },
+            .export_ => self.export_off = @intCast(fbs.pos),
+
             .code => try self.code_section(r),
             .table => try self.table_section(r),
             .element => try self.element_section(r),
@@ -142,49 +140,108 @@ pub fn type_section(self: *Module, r: Reader) !void {
     }
 }
 
+pub fn dbg_type(self: *Module, typeidx: u32) !void {
+    var fbs = self.fbs_at(self.types[typeidx]);
+    const r = fbs.reader();
+    const tag = try r.readByte();
+    if (tag != 0x60) return error.InvalidFormat;
+    const n_params = try readu(r);
+    severe("[", .{});
+    for (0..n_params) |i| {
+        if (i > 0) severe(", ", .{});
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        severe("{s}", .{@tagName(typ)});
+    }
+    severe("] => [", .{});
+    const n_ret = try readu(r);
+    for (0..n_ret) |i| {
+        if (i > 0) severe(", ", .{});
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        severe("{s}", .{@tagName(typ)});
+    }
+    severe("]\n", .{});
+}
+
+// currently we two-cycle the import section to first get the counts
 pub fn import_section(self: *Module, r: Reader) !void {
     self.imports_off = @intCast(r.context.pos);
     const len = try readu(r);
     dbg("IMPORTS: {}\n", .{len});
     self.n_imports = len;
     for (0..len) |_| {
-        const mod = try readName(r);
-        const name = try readName(r);
-        dbg("{s}:{s} = ", .{ mod, name });
+        _ = try readName(r);
+        _ = try readName(r);
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         switch (kind) {
             .func => {
-                const idx = try readu(r);
-                dbg("func {}\n", .{idx});
+                _ = try readu(r);
                 self.n_funcs_import += 1;
             },
             .table => {
-                const typ: defs.ValType = @enumFromInt(try r.readByte());
-                const limits = try readLimits(r);
-                dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
+                _ = try r.readByte();
+                _ = try readLimits(r);
             },
             .mem => {
-                const limits = try readLimits(r);
-                dbg("mem w {}:{?}\n", .{ limits.min, limits.max });
+                _ = try readLimits(r);
             },
             .global => {
-                const typ: defs.ValType = @enumFromInt(try r.readByte());
-                const mut = (try r.readByte()) > 0;
-                dbg("global {} {}\n", .{ typ, mut });
+                _ = try r.readByte();
+                _ = try r.readByte();
                 self.n_globals_import += 1;
             },
         }
     }
 }
 
-fn export_section_dbg(r: Reader) !void {
+pub fn dbg_imports(self: *Module) !void {
+    var fbs = self.fbs_at(self.imports_off);
+    const r = fbs.reader();
     const len = try readu(r);
-    dbg("EXPORTS: {}\n", .{len});
+
+    for (0..len) |_| {
+        const mod = try readName(r);
+        const name = try readName(r);
+        severe("{s}:{s} = ", .{ mod, name });
+        const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
+        switch (kind) {
+            .func => {
+                const idx = try readu(r);
+                severe("func ", .{});
+                try self.dbg_type(idx);
+            },
+            .table => {
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
+                const limits = try readLimits(r);
+                severe("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
+            },
+            .mem => {
+                const limits = try readLimits(r);
+                severe("mem w {}:{?}\n", .{ limits.min, limits.max });
+            },
+            .global => {
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
+                const mut = (try r.readByte()) > 0;
+                severe("global {} {}\n", .{ typ, mut });
+            },
+        }
+    }
+}
+
+pub fn dbg_exports(self: *Module) !void {
+    var fbs = self.fbs_at(self.export_off);
+    const r = fbs.reader();
+    const len = try readu(r);
+    severe("EXPORTS: {}\n", .{len});
     for (0..len) |_| {
         const name = try readName(r);
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         const idx = try readu(r);
-        dbg("{s} = {s} {}\n", .{ name, @tagName(kind), idx });
+        severe("{s} = {s} {} ", .{ name, @tagName(kind), idx });
+        if (kind == .func) {
+            // TODO: reexport of imports allowed??
+            try self.dbg_type(self.funcs_internal[idx - self.n_funcs_import].typeidx);
+        }
+        severe("\n", .{});
     }
 }
 

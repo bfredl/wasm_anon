@@ -32,21 +32,43 @@ pub fn main() !void {
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
 
+    if (argv.len == 2) {
+        try mod.dbg_imports();
+        try mod.dbg_exports();
+        return usage();
+    }
+
+    const callname = std.mem.span(argv[2]);
+    if (std.mem.eql(u8, callname, "--wasi")) {
+        return wasi_run(&mod);
+    }
+
+    if (argv.len < 4) return usage();
+
     var in = try wasm_shelf.Instance.init(&mod, null);
     defer in.deinit();
 
-    if (argv.len == 3) return usage();
-    if (argv.len >= 4) {
-        const sym = try mod.lookup_export(std.mem.span(argv[2])) orelse
-            return dbg("not found :pensive:\n", .{});
+    const sym = try mod.lookup_export(callname) orelse
+        return dbg("not found :pensive:\n", .{});
 
-        dbg("SYM: {}\n", .{sym});
-        if (sym.kind != .func) return dbg("not a function :(\n", .{});
+    dbg("SYM: {}\n", .{sym});
+    if (sym.kind != .func) return dbg("not a function :(\n", .{});
 
-        const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
-        var res: [1]StackValue = undefined;
-        const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res);
-        if (n_res != 1) dbg("TODO: n_res\n", .{});
-        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res[0].i32 });
-    }
+    const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
+    var res: [1]StackValue = undefined;
+    const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res);
+    if (n_res != 1) dbg("TODO: n_res\n", .{});
+    dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res[0].i32 });
+}
+
+fn wasi_run(mod: *wasm_shelf.Module) !void {
+    var in = try wasm_shelf.Instance.init(mod, null);
+
+    const sym = try mod.lookup_export("_start") orelse
+        return dbg("not a wasi module? :pensive:\n", .{});
+
+    if (sym.kind != .func) return dbg("not a function :(\n", .{});
+    _ = try in.execute(sym.idx, &.{}, &.{});
+
+    defer in.deinit();
 }
