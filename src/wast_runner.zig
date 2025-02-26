@@ -88,7 +88,7 @@ pub fn main() !u8 {
             const mod_code = try wat2wasm(mod_source, allocator);
 
             mod = try .parse(mod_code, allocator);
-            in = try .init(&mod, imports);
+            in = try .init(&mod, &imports);
             did_mod = true;
             continue;
         } else {
@@ -234,8 +234,9 @@ pub fn main() !u8 {
     return if (failures > maxerr) 1 else 0;
 }
 
-fn modadder(args_ret: []StackValue, data: *anyopaque) !void {
+fn modadder(args_ret: []StackValue, in: *wasm_shelf.Instance, data: *anyopaque) !void {
     _ = data;
+    _ = in;
     const x = &args_ret[0].i32;
     const y = args_ret[1].i32;
     if (y == 0) {

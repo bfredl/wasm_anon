@@ -322,7 +322,7 @@ pub fn global_section(self: *Module, r: Reader) !void {
 }
 
 const Instance = @import("./Instance.zig");
-pub fn init_imports(self: *Module, in: *Instance, imports: ?ImportTable) !void {
+pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void {
     var fbs = self.fbs_at(self.imports_off);
     const r = fbs.reader();
     const len = try readu(r);

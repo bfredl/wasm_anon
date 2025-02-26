@@ -343,7 +343,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     const f = in.funcs_imported[idx];
                     const level = stack.values.items.len - f.n_args;
                     if (f.n_res > f.n_args) try stack.values.appendNTimes(.{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
-                    try f.cb(stack.values.items[level..], f.data);
+                    try f.cb(stack.values.items[level..], in, f.data);
                     if (f.n_args > f.n_res) stack.values.items.len = level + f.n_res;
                     break;
                 }

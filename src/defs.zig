@@ -375,8 +375,8 @@ pub const Prefixed = enum(u32) {
 pub const max_prefixed = 17;
 
 pub const HostFunc = struct {
-    cb: *const fn (args_ret: []StackValue, data: *anyopaque) WASMError!void,
-    data: *anyopaque,
+    cb: *const fn (args_ret: []StackValue, in: *@import("./Instance.zig"), data: *anyopaque) WASMError!void,
+    data: *anyopaque = undefined,
     n_args: u16,
     n_res: u16,
 };

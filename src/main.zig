@@ -3,6 +3,7 @@ const dbg = std.debug.print;
 
 const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
+const Instance = wasm_shelf.Instance;
 
 pub fn usage() void {
     dbg("Read the source code.\n", .{});
@@ -40,12 +41,12 @@ pub fn main() !void {
 
     const callname = std.mem.span(argv[2]);
     if (std.mem.eql(u8, callname, "--wasi")) {
-        return wasi_run(&mod);
+        return wasi_run(&mod, allocator);
     }
 
     if (argv.len < 4) return usage();
 
-    var in = try wasm_shelf.Instance.init(&mod, null);
+    var in = try Instance.init(&mod, null);
     defer in.deinit();
 
     const sym = try mod.lookup_export(callname) orelse
@@ -61,8 +62,55 @@ pub fn main() !void {
     dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res[0].i32 });
 }
 
-fn wasi_run(mod: *wasm_shelf.Module) !void {
-    var in = try wasm_shelf.Instance.init(mod, null);
+fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = data;
+    _ = in;
+    const arg = args_ret[0].i32;
+    dbg("wasi exit: {}\n", .{arg});
+    return error.WASMTrap;
+}
+
+fn wasi_fd_read(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = data;
+    _ = in;
+    _ = args_ret;
+    return error.WASMTrap;
+}
+
+fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = data;
+    _ = in;
+    const fd = args_ret[0].i32;
+    const iovs: u32 = @intCast(args_ret[1].i32);
+    const iovs_len = args_ret[2].i32;
+    const res_size_ptr = args_ret[3].i32;
+
+    dbg("print to {} with {}:{} and {}\n", .{ fd, iovs, iovs_len, res_size_ptr });
+    for (0..@as(usize, @intCast(iovs_len))) |i| {
+        const pos = iovs + 8 * i;
+        _ = pos;
+    }
+
+    return error.WASMTrap;
+}
+
+fn wasi_clock_time_get(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = data;
+    _ = args_ret;
+    _ = in;
+    return error.WASMTrap;
+}
+
+fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator) !void {
+    var imports: wasm_shelf.ImportTable = .init(allocator);
+    defer imports.deinit();
+
+    try imports.add_func("proc_exit", .{ .cb = &wasi_proc_exit, .n_args = 1, .n_res = 0 });
+    try imports.add_func("fd_read", .{ .cb = &wasi_fd_read, .n_args = 4, .n_res = 1 });
+    try imports.add_func("fd_write", .{ .cb = &wasi_fd_write, .n_args = 4, .n_res = 1 });
+    try imports.add_func("clock_time_get", .{ .cb = &wasi_clock_time_get, .n_args = 3, .n_res = 1 });
+
+    var in = try wasm_shelf.Instance.init(mod, &imports);
 
     const sym = try mod.lookup_export("_start") orelse
         return dbg("not a wasi module? :pensive:\n", .{});

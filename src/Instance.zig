@@ -17,7 +17,7 @@ pub fn get_global(self: *Instance, idx: u32) *defs.StackValue {
     return if (idx < self.mod.n_globals_import) g.indir else g;
 }
 
-pub fn init(mod: *Module, imports: ?ImportTable) !Instance {
+pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
     var self = Instance{
         .mod = mod,
         .mem = .init(mod.allocator),
