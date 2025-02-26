@@ -34,6 +34,6 @@ pub fn add_global(self: *ImportTable, name: []const u8, ref: *defs.StackValue, t
 }
 
 // Note: "ref" must point to a full StackValue. Full 64-bits will be overwritten even if the type is 32-bit internally
-pub fn add_func(self: *ImportTable, name: []const u8, ref: *defs.StackValue, typ: defs.ValType) !void {
-    try self.funcs.put(self.allocator, name, .{ .ref = ref, .typ = typ });
+pub fn add_func(self: *ImportTable, name: []const u8, def: defs.HostFunc) !void {
+    try self.funcs.put(self.allocator, name, def);
 }

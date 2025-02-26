@@ -139,7 +139,7 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     // pretty much homogenous.
 
     stack.locals_ptr = @intCast(stack.values.items.len);
-    if (params.len != self.n_params or ret.len < self.n_ret) return error.InvalidArgument;
+    if (params.len != self.n_params or ret.len < self.n_res) return error.InvalidArgument;
     try stack.push_multiple(params);
     // fbs.pos is the insruction pointer which is a bit weird but works
     var fbs = mod.fbs_at(self.codeoff);
@@ -148,13 +148,13 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     try stack.init_locals(r);
     stack.enter_frame();
     // entire body is implicitly a block, producing the return values
-    try stack.push_label(@intCast(control.len - 1), @intCast(self.n_ret));
+    try stack.push_label(@intCast(control.len - 1), @intCast(self.n_res));
 
     try stack.run_vm(in, r, self);
-    if (stack.nvals() < self.n_ret) return error.RuntimeError;
+    if (stack.nvals() < self.n_res) return error.RuntimeError;
 
-    @memcpy(ret[0..self.n_ret], stack.values.items[stack.values.items.len - self.n_ret ..]);
-    return self.n_ret;
+    @memcpy(ret[0..self.n_res], stack.values.items[stack.values.items.len - self.n_res ..]);
+    return self.n_res;
 }
 
 fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) !void {
@@ -340,7 +340,12 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
 
                 if (idx >= mod.n_funcs_import + mod.funcs_internal.len) @panic("SHAKING FEAR");
                 if (idx < mod.n_funcs_import) {
-                    return error.NotImplemented;
+                    const f = in.funcs_imported[idx];
+                    const level = stack.values.items.len - f.n_args;
+                    if (f.n_res > f.n_args) try stack.values.appendNTimes(.{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
+                    try f.cb(stack.values.items[level..], f.data);
+                    if (f.n_args > f.n_res) stack.values.items.len = level + f.n_res;
+                    break;
                 }
 
                 const called = &mod.funcs_internal[idx - mod.n_funcs_import];
@@ -365,7 +370,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 control = called_control;
                 stack.enter_frame();
                 // entire body is implicitly a block, producing the return values
-                try stack.push_label(@intCast(control.len - 1), @intCast(func.n_ret));
+                try stack.push_label(@intCast(control.len - 1), @intCast(func.n_res));
                 c_ip = 0;
             },
             .end => {
@@ -376,18 +381,18 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 if (stack.labels.items.len == stack.frame_label) {
                     if (stack.frames.pop()) |f| {
                         const returned = func;
-                        if (returned.n_ret > 0) {
+                        if (returned.n_res > 0) {
                             // these can end up overlapping
                             std.mem.copyForwards(
                                 StackValue,
-                                stack.values.items[stack.locals_ptr..][0..returned.n_ret],
-                                stack.values.items[stack.values.items.len - returned.n_ret ..],
+                                stack.values.items[stack.locals_ptr..][0..returned.n_res],
+                                stack.values.items[stack.values.items.len - returned.n_res ..],
                             );
                         }
                         func = f.func;
                         control = func.control.?;
                         if (stack.values.items.len < stack.locals_ptr) @panic("ayyooooo");
-                        stack.values.items.len = stack.locals_ptr + returned.n_ret;
+                        stack.values.items.len = stack.locals_ptr + returned.n_res;
                         stack.frame_ptr = f.frame_ptr;
                         stack.locals_ptr = f.locals_ptr;
                         stack.frame_label = f.frame_label;
@@ -402,7 +407,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     if (c_ip >= control.len or control[c_ip].off != pos) @panic("PANIKED FEAR");
                 }
                 // TODO
-                // if (stack.nvals() != self.n_ret) return error.RuntimeError;
+                // if (stack.nvals() != self.n_res) return error.RuntimeError;
             },
             .prefixed => {
                 const code: defs.Prefixed = try read.prefix(r);

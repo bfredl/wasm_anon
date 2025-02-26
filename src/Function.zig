@@ -1,7 +1,7 @@
 const Function = @This();
 typeidx: u32,
 n_params: u32 = undefined,
-n_ret: u32 = undefined,
+n_res: u32 = undefined,
 codeoff: u32 = undefined,
 control: ?[]ControlItem = null,
 
@@ -34,16 +34,7 @@ pub fn ensure_parsed(self: *Function, mod: *Module) ![]ControlItem {
 }
 
 pub fn parse(self: *Function, mod: *Module, r: Reader) !void {
-    var fbs_type = mod.fbs_at(mod.types[self.typeidx]);
-    const r_type = fbs_type.reader();
-
-    const tag = try r_type.readByte();
-    if (tag != 0x60) return error.InvalidFormat;
-    self.n_params = try readu(r_type);
-    for (0..self.n_params) |_| {
-        _ = try r_type.readByte(); // TEMP hack: while we don't validate runtime args
-    }
-    self.n_ret = try readu(r_type);
+    self.n_params, self.n_res = try mod.type_arity(self.typeidx);
 
     self.codeoff = @intCast(r.context.pos);
 

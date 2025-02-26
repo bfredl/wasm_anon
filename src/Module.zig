@@ -131,8 +131,8 @@ pub fn type_section(self: *Module, r: Reader) !void {
             dbg("{s}, ", .{@tagName(typ)});
         }
         dbg("): (", .{});
-        const n_ret = try readu(r);
-        for (0..n_ret) |_| {
+        const n_res = try readu(r);
+        for (0..n_res) |_| {
             const typ: defs.ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
         }
@@ -153,8 +153,8 @@ pub fn dbg_type(self: *Module, typeidx: u32) !void {
         severe("{s}", .{@tagName(typ)});
     }
     severe("] => [", .{});
-    const n_ret = try readu(r);
-    for (0..n_ret) |i| {
+    const n_res = try readu(r);
+    for (0..n_res) |i| {
         if (i > 0) severe(", ", .{});
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         severe("{s}", .{@tagName(typ)});
@@ -321,12 +321,16 @@ pub fn global_section(self: *Module, r: Reader) !void {
     self.globals_off = @intCast(r.context.pos);
 }
 
-pub fn init_globals(self: *Module, globals: []defs.StackValue, imports: ?ImportTable) !void {
+const Instance = @import("./Instance.zig");
+pub fn init_imports(self: *Module, in: *Instance, imports: ?ImportTable) !void {
     var fbs = self.fbs_at(self.imports_off);
     const r = fbs.reader();
     const len = try readu(r);
 
-    for (0..len) |i| {
+    var func_counter: u32 = 0;
+    var global_counter: u32 = 0;
+
+    for (0..len) |_| {
         const mod = try readName(r);
         const name = try readName(r);
         dbg("{s}:{s} = ", .{ mod, name });
@@ -335,7 +339,11 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue, imports: ?ImportT
         switch (kind) {
             .func => {
                 const idx = try readu(r);
-                _ = idx;
+                const item = imp.funcs.get(name) orelse return error.MissingImport;
+                const n_args, const n_res = try self.type_arity(idx);
+                if (n_args != item.n_args or n_res != item.n_res) return error.ImportTypeMismatch;
+                in.funcs_imported[func_counter] = item;
+                func_counter += 1;
             },
             .table => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
@@ -354,7 +362,8 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue, imports: ?ImportT
 
                 const item = imp.globals.get(name) orelse return error.MissingImport;
                 if (typ != item.typ) return error.ImportTypeMismatch;
-                globals[i] = .{ .indir = item.ref };
+                in.globals_maybe_indir[global_counter] = .{ .indir = item.ref };
+                global_counter += 1;
             },
         }
     }
@@ -364,8 +373,21 @@ pub fn init_globals(self: *Module, globals: []defs.StackValue, imports: ?ImportT
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
-        globals[self.n_globals_import + i] = try Interpreter.eval_constant_expr(r, typ, globals[0..self.n_globals_import]);
+        in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(r, typ, in.preglobals());
     }
+}
+
+pub fn type_arity(self: *const Module, type_idx: u32) !struct { u16, u16 } {
+    var fbs_type = self.fbs_at(self.types[type_idx]);
+    const r_type = fbs_type.reader();
+    const tag = try r_type.readByte();
+    if (tag != 0x60) return error.InvalidFormat;
+    const n_params: u16 = @intCast(try readu(r_type));
+    for (0..n_params) |_| {
+        _ = try r_type.readByte(); // TEMP hack: while we don't validate runtime args
+    }
+    const n_res: u16 = @intCast(try readu(r_type));
+    return .{ n_params, n_res };
 }
 
 pub fn table_section(self: *Module, r: Reader) !void {

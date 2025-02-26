@@ -25,21 +25,22 @@ pub fn init(mod: *Module, imports: ?ImportTable) !Instance {
         .funcs_imported = try mod.allocator.alloc(defs.HostFunc, mod.n_funcs_import),
     };
 
-    try mod.init_globals(self.globals_maybe_indir, imports);
     if (mod.mem_limits.min > 0) {
         try self.mem.appendNTimes(0, 0x10000 * mod.mem_limits.min);
     }
+    try mod.init_imports(&self, imports);
     try mod.init_data(self.mem.items, self.preglobals());
     return self;
-}
-
-pub fn preglobals(self: *Instance) []const defs.StackValue {
-    return self.globals_maybe_indir[0..self.mod.n_globals_import];
 }
 
 pub fn deinit(self: *Instance) void {
     self.mem.deinit();
     self.mod.allocator.free(self.globals_maybe_indir);
+    self.mod.allocator.free(self.funcs_imported);
+}
+
+pub fn preglobals(self: *Instance) []const defs.StackValue {
+    return self.globals_maybe_indir[0..self.mod.n_globals_import];
 }
 
 pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue) !u32 {

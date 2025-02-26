@@ -36,19 +36,10 @@ pub const BlockType = union(enum) {
 
     // args, results
     pub fn arity(self: BlockType, mod: *const Module) !struct { u16, u16 } {
-        switch (self) {
-            .simple => |vt| return .{ 0, if (vt == .void) 0 else 1 },
-            .complex_idx => |idx| {
-                var fbs_type = mod.fbs_at(mod.types[idx]);
-                const r_type = fbs_type.reader();
-                const n_params: u16 = @intCast(try readu(r_type));
-                for (0..n_params) |_| {
-                    _ = try r_type.readByte(); // TEMP hack: while we don't validate runtime args
-                }
-                const n_ret: u16 = @intCast(try readu(r_type));
-                return .{ n_params, n_ret };
-            },
-        }
+        return switch (self) {
+            .simple => |vt| .{ 0, if (vt == .void) 0 else 1 },
+            .complex_idx => |idx| mod.type_arity(idx),
+        };
     }
 };
 

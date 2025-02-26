@@ -54,6 +54,8 @@ pub fn main() !u8 {
     try imports.add_global("global_i32", &i32val, .i32);
     try imports.add_global("global_i64", &i64val, .i64);
 
+    try imports.add_func("modadder", .{ .cb = &modadder, .data = undefined, .n_args = 2, .n_res = 1 });
+
     defer if (did_mod) {
         in.deinit();
         mod.deinit();
@@ -130,11 +132,11 @@ pub fn main() !u8 {
 
         cases += 1;
 
-        const max_ret = 4;
+        const max_res = 4;
         var expected_trap = false;
-        var expected_n_ret: u32 = 0;
-        var expected_ret: [max_ret]StackValue = undefined;
-        var expected_type: [max_ret]ConstKind = undefined;
+        var expected_n_res: u32 = 0;
+        var expected_res: [max_res]StackValue = undefined;
+        var expected_type: [max_res]ConstKind = undefined;
 
         switch (kind) {
             .assert_return => {
@@ -143,14 +145,14 @@ pub fn main() !u8 {
                     const ret = try t.expect(.Atom);
                     _ = try t.expect(.RightParen);
 
-                    if (expected_n_ret == max_ret) @panic("increase 'max_ret' mayhaps");
-                    expected_type[expected_n_ret] = typ;
-                    expected_ret[expected_n_ret] = t.as_res(typ, ret) catch parm: {
+                    if (expected_n_res == max_res) @panic("increase 'max_res' mayhaps");
+                    expected_type[expected_n_res] = typ;
+                    expected_res[expected_n_res] = t.as_res(typ, ret) catch parm: {
                         dbg("{s} ", .{t.rawtext(ret)});
                         parse_fail = true;
                         break :parm undefined;
                     };
-                    expected_n_ret = expected_n_ret + 1;
+                    expected_n_res = expected_n_res + 1;
                 }
             },
             .assert_trap, .assert_exhaustion => {
@@ -176,7 +178,7 @@ pub fn main() !u8 {
             continue;
         }
 
-        var res: [max_ret]StackValue = undefined;
+        var res: [max_res]StackValue = undefined;
         const maybe_n_res = in.execute(sym.idx, params.items, &res) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
@@ -198,7 +200,7 @@ pub fn main() !u8 {
             }
         } else if (!expected_trap) {
             if (maybe_n_res) |n_res| {
-                for (expected_type[0..n_res], expected_ret[0..n_res], 0..) |typ, val, i| {
+                for (expected_type[0..n_res], expected_res[0..n_res], 0..) |typ, val, i| {
                     switch (typ) {
                         inline else => |ctyp| {
                             const expected = @field(val, @tagName(ctyp)[0..3]);
@@ -230,6 +232,17 @@ pub fn main() !u8 {
     if (specname) |nam| dbg("{s}: ", .{nam});
     dbg("{} tests, {} ok, {} fail ({} unapplicable, {} max)\n", .{ cases, cases - failures, failures, unapplicable, maxerr });
     return if (failures > maxerr) 1 else 0;
+}
+
+fn modadder(args_ret: []StackValue, data: *anyopaque) !void {
+    _ = data;
+    const x = &args_ret[0].i32;
+    const y = args_ret[1].i32;
+    if (y == 0) {
+        x.* = 10 * x.*;
+    } else {
+        x.* = @rem(x.*, y) + y;
+    }
 }
 
 const Tokenizer = struct {
