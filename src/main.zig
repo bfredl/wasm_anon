@@ -79,19 +79,32 @@ fn wasi_fd_read(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 
 fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     _ = data;
-    _ = in;
     const fd = args_ret[0].i32;
     const iovs: u32 = @intCast(args_ret[1].i32);
-    const iovs_len = args_ret[2].i32;
-    const res_size_ptr = args_ret[3].i32;
+    const iovs_len: u32 = @intCast(args_ret[2].i32);
+    const res_size_ptr: u32 = @intCast(args_ret[3].i32);
+
+    if (fd != 2) return error.WASMTrap;
 
     dbg("print to {} with {}:{} and {}\n", .{ fd, iovs, iovs_len, res_size_ptr });
+
+    const raw_iovec = try in.mem_get_bytes(iovs, iovs_len * 8);
+    //const iovec = try in.mem_get_as([2]u32, iovs, iovs_len);
+    var cumulative: u32 = 0;
     for (0..@as(usize, @intCast(iovs_len))) |i| {
-        const pos = iovs + 8 * i;
-        _ = pos;
+        const pos = 8 * i;
+        const iptr = std.mem.readInt(u32, raw_iovec[pos..][0..4], .little);
+        const ilen = std.mem.readInt(u32, raw_iovec[pos + 4 ..][0..4], .little);
+
+        // TODO: actually use ioKVÄCK of the underlying platform
+        const aout = try in.mem_get_bytes(iptr, ilen);
+        std.debug.print("{s}", .{aout});
+        cumulative += ilen;
     }
 
-    return error.WASMTrap;
+    const raw_ret = try in.mem_get_bytes(res_size_ptr, 4);
+    std.mem.writeInt(u32, raw_ret[0..4], cumulative, .little);
+    args_ret[0] = .{ .i32 = 0 }; // SUCCESS
 }
 
 fn wasi_clock_time_get(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {

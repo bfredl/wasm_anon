@@ -51,3 +51,12 @@ pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []
     defer stack.deinit();
     return stack.execute(func, self.mod, self, args, ret);
 }
+
+pub fn mem_get_bytes(self: *Instance, pos: u32, len: u32) ![]u8 {
+    if (pos + len > self.mem.items.len) return error.WASMTrap;
+    return self.mem.items[pos..][0..len];
+}
+
+pub fn mem_get_as(self: *Instance, comptime item: type, pos: u32, count: u32) []align(1) item {
+    return @ptrCast(self.mem_get_bytes(pos, count * @sizeOf(item)));
+}

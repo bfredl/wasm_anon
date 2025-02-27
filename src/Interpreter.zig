@@ -345,33 +345,32 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     if (f.n_res > f.n_args) try stack.values.appendNTimes(.{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
                     try f.cb(stack.values.items[level..], in, f.data);
                     if (f.n_args > f.n_res) stack.values.items.len = level + f.n_res;
-                    break;
+                } else {
+                    const called = &mod.funcs_internal[idx - mod.n_funcs_import];
+                    if (chktyp) |typidx| {
+                        if (typidx != called.typeidx) return error.WASMTrap;
+                    }
+
+                    const called_control = try called.ensure_parsed(mod);
+                    if (stack.nvals() < called.n_params) {
+                        return error.RuntimeError;
+                    }
+
+                    // save current state as a frame
+                    // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
+                    try stack.push_frame(@intCast(r.context.pos), c_ip, func);
+
+                    // enter new function
+                    stack.locals_ptr = @intCast(stack.values.items.len - called.n_params);
+                    r.context.pos = called.codeoff;
+                    try init_locals(stack, r);
+                    func = called;
+                    control = called_control;
+                    stack.enter_frame();
+                    // entire body is implicitly a block, producing the return values
+                    try stack.push_label(@intCast(control.len - 1), @intCast(func.n_res));
+                    c_ip = 0;
                 }
-
-                const called = &mod.funcs_internal[idx - mod.n_funcs_import];
-                if (chktyp) |typidx| {
-                    if (typidx != called.typeidx) return error.WASMTrap;
-                }
-
-                const called_control = try called.ensure_parsed(mod);
-                if (stack.nvals() < called.n_params) {
-                    return error.RuntimeError;
-                }
-
-                // save current state as a frame
-                // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
-                try stack.push_frame(@intCast(r.context.pos), c_ip, func);
-
-                // enter new function
-                stack.locals_ptr = @intCast(stack.values.items.len - called.n_params);
-                r.context.pos = called.codeoff;
-                try init_locals(stack, r);
-                func = called;
-                control = called_control;
-                stack.enter_frame();
-                // entire body is implicitly a block, producing the return values
-                try stack.push_label(@intCast(control.len - 1), @intCast(func.n_res));
-                c_ip = 0;
             },
             .end => {
                 c_ip += 1;
