@@ -72,9 +72,30 @@ fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void
 
 fn wasi_fd_read(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     _ = data;
-    _ = in;
-    _ = args_ret;
-    return error.WASMTrap;
+    const fd = args_ret[0].i32;
+    const iovs: u32 = @intCast(args_ret[1].i32);
+    const iovs_len: u32 = @intCast(args_ret[2].i32);
+    const res_size_ptr: u32 = @intCast(args_ret[3].i32);
+
+    if (fd != 0) return error.WASMTrap;
+
+    const raw_iovec = try in.mem_get_bytes(iovs, iovs_len * 8);
+    //const iovec = try in.mem_get_as([2]u32, iovs, iovs_len);
+    var cumulative: u32 = 0;
+    for (0..@as(usize, @intCast(iovs_len))) |i| {
+        const pos = 8 * i;
+        const iptr = std.mem.readInt(u32, raw_iovec[pos..][0..4], .little);
+        const ilen = std.mem.readInt(u32, raw_iovec[pos + 4 ..][0..4], .little);
+
+        // TODO: actually use ioKVÄCK of the underlying platform
+        const ain = try in.mem_get_bytes(iptr, ilen);
+        const rlen = std.posix.read(fd, ain) catch return error.WASMTrap;
+        cumulative += @intCast(rlen);
+    }
+
+    const raw_ret = try in.mem_get_bytes(res_size_ptr, 4);
+    std.mem.writeInt(u32, raw_ret[0..4], cumulative, .little);
+    args_ret[0] = .{ .i32 = 0 }; // SUCCESS
 }
 
 fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
