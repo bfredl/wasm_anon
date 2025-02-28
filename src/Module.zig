@@ -142,6 +142,7 @@ pub fn type_section(self: *Module, r: Reader) !void {
 }
 
 pub fn dbg_type(self: *Module, typeidx: u32) !void {
+    if (self.types.len <= typeidx) return severe("[OUT OF BOUNDS]", .{});
     var fbs = self.fbs_at(self.types[typeidx]);
     const r = fbs.reader();
     const tag = try r.readByte();

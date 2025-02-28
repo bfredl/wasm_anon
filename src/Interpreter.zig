@@ -336,9 +336,9 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
             },
             .call, .call_indirect => {
                 const idx, const chktyp = if (inst == .call_indirect) funcidx: {
+                    const typidx = try readLeb(r, u32);
                     const tblidx = try readLeb(r, u32);
                     _ = tblidx; // clown face emoji
-                    const typidx = try readLeb(r, u32);
                     const eidx: u32 = @bitCast((try stack.pop()).i32);
                     if (eidx >= mod.funcref_table.len) return error.WASMTrap;
                     const funcidx = mod.funcref_table[eidx];
@@ -354,15 +354,19 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     if (f.n_args > f.n_res) stack.values.items.len = level + f.n_res;
                 } else {
                     const called = &mod.funcs_internal[idx - mod.n_funcs_import];
+                    const called_control = try called.ensure_parsed(mod);
                     if (chktyp) |typidx| {
                         if (typidx != called.typeidx) {
                             severe("SKANDAL: {s} tries to call {s} with {} but its {}\n", .{ func.name orelse "???", called.name orelse "???", typidx, called.typeidx });
+                            severe("wanted: ", .{});
+                            try mod.dbg_type(typidx);
+                            severe("but was: ", .{});
+                            try mod.dbg_type(called.typeidx);
                             stack.showstack(func);
                             return error.WASMTrap;
                         }
                     }
 
-                    const called_control = try called.ensure_parsed(mod);
                     if (stack.nvals() < called.n_params) {
                         return error.RuntimeError;
                     }
