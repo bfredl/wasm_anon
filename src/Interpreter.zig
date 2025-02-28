@@ -95,6 +95,13 @@ pub fn pop_binop(self: *Interpreter) !struct { *StackValue, StackValue } {
     return .{ &stack.items[stack.items.len - 1], src };
 }
 
+pub fn showstack(self: *Interpreter, cur_func: *Function) void {
+    severe("c: {s}\n", .{cur_func.name orelse "???"});
+    for (0..self.frames.items.len) |i| {
+        severe("{}: {s}\n", .{ i, self.frames.items[self.frames.items.len - i - 1].func.name orelse "???" });
+    }
+}
+
 pub fn pop_and_jump_labels(self: *Interpreter, levels: u32) !u32 {
     self.labels.items.len -= levels;
     const last = self.labels.getLastOrNull() orelse return error.RuntimeError;
@@ -350,6 +357,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     if (chktyp) |typidx| {
                         if (typidx != called.typeidx) {
                             severe("SKANDAL: {s} tries to call {s} with {} but its {}\n", .{ func.name orelse "???", called.name orelse "???", typidx, called.typeidx });
+                            stack.showstack(func);
                             return error.WASMTrap;
                         }
                     }
