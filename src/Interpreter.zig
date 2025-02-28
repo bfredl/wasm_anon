@@ -348,7 +348,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 } else {
                     const called = &mod.funcs_internal[idx - mod.n_funcs_import];
                     if (chktyp) |typidx| {
-                        if (typidx != called.typeidx) return error.WASMTrap;
+                        if (typidx != called.typeidx) {
+                            severe("SKANDAL: {s} tries to call {s} with {} but its {}\n", .{ func.name orelse "???", called.name orelse "???", typidx, called.typeidx });
+                            return error.WASMTrap;
+                        }
                     }
 
                     const called_control = try called.ensure_parsed(mod);

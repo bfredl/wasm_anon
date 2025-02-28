@@ -93,8 +93,9 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .table => try self.table_section(r),
             .element => try self.element_section(r),
             .data => self.data_off = @intCast(fbs.pos),
+            .custom => try self.custom_section(r, len),
             else => {
-                // dbg("NO {s}!\n", .{@tagName(kind)});
+                // severe("NO {s}!\n", .{@tagName(kind)});
             },
         }
 
@@ -441,6 +442,38 @@ pub fn code_section(self: *Module, r: Reader) !void {
 
         r.context.pos = endpos;
         dbg("\n", .{});
+    }
+}
+
+pub fn custom_section(self: *Module, r: Reader, sec_len: usize) !void {
+    const end_pos = r.context.pos + sec_len;
+    const name = try readName(r);
+    dbg("CUSTOM: {s} as {}\n", .{ name, sec_len });
+    if (std.mem.eql(u8, name, "name")) {
+        // LAYERING! they could just have used separate custom sections like
+        // name.function and so on but that would have been too simple.
+        while (r.context.pos < end_pos) {
+            const kinda = try r.readByte();
+            const size = try readu(r);
+
+            if (kinda == 1 and self.funcs_internal.len > 0) { // function names, woho!
+                const map_len = try readu(r);
+                for (0..map_len) |_| {
+                    const idx = try readu(r);
+                    const funcname = try readName(r);
+                    // dbg("waa {} is {s}\n", .{ idx, funcname });
+                    if (idx >= self.n_funcs_import) {
+                        const internal_idx = idx - self.n_funcs_import;
+                        if (internal_idx < self.funcs_internal.len) {
+                            self.funcs_internal[internal_idx].name = funcname;
+                        }
+                    }
+                }
+            } else {
+                dbg("NAMM {} w size {}\n", .{ kinda, size });
+                r.context.pos = @min(end_pos, r.context.pos + size);
+            }
+        }
     }
 }
 

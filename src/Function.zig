@@ -5,6 +5,8 @@ n_res: u32 = undefined,
 codeoff: u32 = undefined,
 control: ?[]ControlItem = null,
 
+name: ?[]const u8 = null,
+
 const std = @import("std");
 const defs = @import("./defs.zig");
 const ops = @import("./ops.zig");
