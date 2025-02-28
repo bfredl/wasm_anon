@@ -105,9 +105,9 @@ fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void 
     const iovs_len: u32 = @intCast(args_ret[2].i32);
     const res_size_ptr: u32 = @intCast(args_ret[3].i32);
 
-    if (fd != 2) return error.WASMTrap;
+    if (fd != 2 and fd != 1) return error.WASMTrap;
 
-    dbg("print to {} with {}:{} and {}\n", .{ fd, iovs, iovs_len, res_size_ptr });
+    dbg("print to {}:\n", .{fd});
 
     const raw_iovec = try in.mem_get_bytes(iovs, iovs_len * 8);
     //const iovec = try in.mem_get_as([2]u32, iovs, iovs_len);
@@ -129,20 +129,29 @@ fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void 
 }
 
 fn wasi_clock_time_get(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
-    _ = data;
-    _ = args_ret;
-    _ = in;
-    return error.WASMTrap;
+    const klocka: *std.time.Timer = @ptrCast(@alignCast(data));
+    const id = args_ret[0].i32;
+    const res_timestamp = try in.mem_get_bytes(args_ret[2].u32(), 8);
+
+    if (id == 1) {
+        const time = klocka.read(); // PRESENT DAY, PRESENT TIME
+        std.mem.writeInt(u64, res_timestamp[0..8], time, .little);
+    } else {
+        dbg("hey guys check this out: {}\n", .{id});
+        return error.WASMTrap;
+    }
 }
 
 fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator) !void {
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit();
 
+    var klocka = try std.time.Timer.start();
+
     try imports.add_func("proc_exit", .{ .cb = &wasi_proc_exit, .n_args = 1, .n_res = 0 });
     try imports.add_func("fd_read", .{ .cb = &wasi_fd_read, .n_args = 4, .n_res = 1 });
     try imports.add_func("fd_write", .{ .cb = &wasi_fd_write, .n_args = 4, .n_res = 1 });
-    try imports.add_func("clock_time_get", .{ .cb = &wasi_clock_time_get, .n_args = 3, .n_res = 1 });
+    try imports.add_func("clock_time_get", .{ .cb = &wasi_clock_time_get, .n_args = 3, .n_res = 1, .data = @ptrCast(&klocka) });
 
     var in = try wasm_shelf.Instance.init(mod, &imports);
 

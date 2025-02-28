@@ -7,6 +7,10 @@ pub const StackValue = extern union {
     ref: u32,
     indir: *StackValue,
 
+    pub fn @"u32"(val: StackValue) u32 {
+        return @bitCast(val.i32);
+    }
+
     pub fn default(valtype: ValType) ?StackValue {
         return switch (valtype) {
             .i32 => .{ .i32 = 0 },

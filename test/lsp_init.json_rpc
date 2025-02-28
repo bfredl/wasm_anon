@@ -1,0 +1,3 @@
+Content-Length: 244
+
+{"id": 0, "jsonrpc": "2.0", "method": "initialize", "params": {"rootUri": "file:///home/lain/", "capabilities": {"textDocument": {"publishDiagnostics": {"relatedInformation": true}}, "positionEncoding": ["utf-8", "utf-16"]}, "processId": 1337}}

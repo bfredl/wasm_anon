@@ -43,6 +43,8 @@ frame_ptr: u32 = 0,
 
 frame_label: u32 = 0,
 
+func: *Function = undefined,
+
 pub fn init(allocator: std.mem.Allocator) Interpreter {
     return .{
         .values = .init(allocator),
@@ -95,8 +97,8 @@ pub fn pop_binop(self: *Interpreter) !struct { *StackValue, StackValue } {
     return .{ &stack.items[stack.items.len - 1], src };
 }
 
-pub fn showstack(self: *Interpreter, cur_func: *Function) void {
-    severe("c: {s}\n", .{cur_func.name orelse "???"});
+pub fn showstack(self: *Interpreter) void {
+    severe("c: {s}\n", .{self.func.name orelse "???"});
     for (0..self.frames.items.len) |i| {
         severe("{}: {s}\n", .{ i, self.frames.items[self.frames.items.len - i - 1].func.name orelse "???" });
     }
@@ -156,18 +158,19 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     stack.enter_frame();
     // entire body is implicitly a block, producing the return values
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_res));
+    stack.func = self;
 
-    try stack.run_vm(in, r, self);
+    //errdefer stack.showstack();
+    try stack.run_vm(in, r);
     if (stack.nvals() < self.n_res) return error.RuntimeError;
 
     @memcpy(ret[0..self.n_res], stack.values.items[stack.values.items.len - self.n_res ..]);
     return self.n_res;
 }
 
-fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) !void {
+fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     var c_ip: u32 = 0;
-    var func = entry_func;
-    var control = func.control.?;
+    var control = stack.func.control.?;
     const mod = in.mod;
 
     while (true) {
@@ -357,12 +360,12 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                     const called_control = try called.ensure_parsed(mod);
                     if (chktyp) |typidx| {
                         if (typidx != called.typeidx) {
-                            severe("SKANDAL: {s} tries to call {s} with {} but its {}\n", .{ func.name orelse "???", called.name orelse "???", typidx, called.typeidx });
+                            severe("SKANDAL: {s} tries to call {s} with {} but its {}\n", .{ stack.func.name orelse "???", called.name orelse "???", typidx, called.typeidx });
                             severe("wanted: ", .{});
                             try mod.dbg_type(typidx);
                             severe("but was: ", .{});
                             try mod.dbg_type(called.typeidx);
-                            stack.showstack(func);
+                            stack.showstack();
                             return error.WASMTrap;
                         }
                     }
@@ -373,17 +376,17 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
 
                     // save current state as a frame
                     // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
-                    try stack.push_frame(@intCast(r.context.pos), c_ip, func);
+                    try stack.push_frame(@intCast(r.context.pos), c_ip, stack.func);
 
                     // enter new function
                     stack.locals_ptr = @intCast(stack.values.items.len - called.n_params);
                     r.context.pos = called.codeoff;
                     try init_locals(stack, r);
-                    func = called;
+                    stack.func = called;
                     control = called_control;
                     stack.enter_frame();
                     // entire body is implicitly a block, producing the return values
-                    try stack.push_label(@intCast(control.len - 1), @intCast(func.n_res));
+                    try stack.push_label(@intCast(control.len - 1), @intCast(stack.func.n_res));
                     c_ip = 0;
                 }
             },
@@ -394,7 +397,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                 // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
                 if (stack.labels.items.len == stack.frame_label) {
                     if (stack.frames.pop()) |f| {
-                        const returned = func;
+                        const returned = stack.func;
                         if (returned.n_res > 0) {
                             // these can end up overlapping
                             std.mem.copyForwards(
@@ -403,8 +406,8 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader, entry_func: *Function) 
                                 stack.values.items[stack.values.items.len - returned.n_res ..],
                             );
                         }
-                        func = f.func;
-                        control = func.control.?;
+                        stack.func = f.func;
+                        control = stack.func.control.?;
                         if (stack.values.items.len < stack.locals_ptr) @panic("ayyooooo");
                         stack.values.items.len = stack.locals_ptr + returned.n_res;
                         stack.frame_ptr = f.frame_ptr;
