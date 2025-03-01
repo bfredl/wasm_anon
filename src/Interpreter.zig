@@ -270,6 +270,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 _ = n_results;
                 // target: right after "loop"
                 try stack.push_label(c_ip, n_args);
+                control[c_ip].count +|= 1;
             },
             .br => {
                 label_target = try readu(r);
@@ -369,6 +370,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                             return error.WASMTrap;
                         }
                     }
+                    called.call_count +|= 1;
 
                     if (false) { // the flash flood
                         if (called.name) |nam| {
@@ -567,6 +569,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             // we don't want to rexec the loop header. however execute the "end"
             // target to clean-up the stack.
             if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
+                control[c_ip].count +|= 1;
                 r.context.pos += 1;
                 _ = try read.blocktype(r);
             } else {

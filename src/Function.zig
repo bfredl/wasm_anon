@@ -7,6 +7,9 @@ control: ?[]ControlItem = null,
 
 name: ?[]const u8 = null,
 
+call_count: Counter = 0,
+const Counter = u64;
+
 const std = @import("std");
 const defs = @import("./defs.zig");
 const ops = @import("./ops.zig");
@@ -24,6 +27,7 @@ const Reader = read.Reader;
 const ControlItem = struct {
     off: u32, // this is absolute (relative to mod.raw)
     jmp_t: u16,
+    count: Counter = 0,
 };
 
 pub fn ensure_parsed(self: *Function, mod: *Module) ![]ControlItem {

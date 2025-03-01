@@ -193,6 +193,8 @@ pub fn import_section(self: *Module, r: Reader) !void {
             },
         }
     }
+
+    // if (dbg == severe) try self.dbg_imports();
 }
 
 pub fn dbg_imports(self: *Module) !void {
@@ -476,6 +478,27 @@ pub fn custom_section(self: *Module, r: Reader, sec_len: usize) !void {
             }
         }
     }
+}
+
+pub fn dump_counts(self: *Module) void {
+    severe("\n\n", .{});
+    for (self.funcs_internal) |i| {
+        if (i.call_count > 0) {
+            severe("{} : {s}\n", .{ i.call_count, i.name orelse "???" });
+        }
+    }
+
+    severe("\n\n", .{});
+    for (self.funcs_internal) |i| {
+        if (i.control) |c| {
+            for (c, 0..) |ci, cidx| {
+                if (ci.count > 0) {
+                    severe("{} : loop {} in {s}\n", .{ ci.count, cidx, i.name orelse "???" });
+                }
+            }
+        }
+    }
+    severe("\n\n", .{});
 }
 
 test "basic functionality" {

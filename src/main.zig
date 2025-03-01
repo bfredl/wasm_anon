@@ -32,6 +32,7 @@ pub fn main() !void {
 
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
+    defer mod.dump_counts();
 
     if (argv.len == 2) {
         try mod.dbg_imports();
@@ -163,6 +164,7 @@ fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator) !void {
         return dbg("not a wasi module? :pensive:\n", .{});
 
     if (sym.kind != .func) return dbg("not a function :(\n", .{});
+
     _ = try in.execute(sym.idx, &.{}, &.{}, true);
 
     defer in.deinit();
