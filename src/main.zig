@@ -57,7 +57,7 @@ pub fn main() !void {
 
     const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
     var res: [1]StackValue = undefined;
-    const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res);
+    const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res, true);
     if (n_res != 1) dbg("TODO: n_res\n", .{});
     dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res[0].i32 });
 }
@@ -119,7 +119,11 @@ fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void 
 
         // TODO: actually use ioKVÄCK of the underlying platform
         const aout = try in.mem_get_bytes(iptr, ilen);
-        std.debug.print("{s}", .{aout});
+        if (fd == 1) {
+            _ = std.io.getStdOut().write(aout) catch return error.WASMTrap;
+        } else {
+            std.debug.print("{s}", .{aout});
+        }
         cumulative += ilen;
     }
 
@@ -159,7 +163,7 @@ fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator) !void {
         return dbg("not a wasi module? :pensive:\n", .{});
 
     if (sym.kind != .func) return dbg("not a function :(\n", .{});
-    _ = try in.execute(sym.idx, &.{}, &.{});
+    _ = try in.execute(sym.idx, &.{}, &.{}, true);
 
     defer in.deinit();
 }

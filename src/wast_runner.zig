@@ -179,7 +179,7 @@ pub fn main() !u8 {
         }
 
         var res: [max_res]StackValue = undefined;
-        const maybe_n_res = in.execute(sym.idx, params.items, &res) catch |err| fail: {
+        const maybe_n_res = in.execute(sym.idx, params.items, &res, false) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
                     dbg("NYI\n", .{});

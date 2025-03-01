@@ -140,7 +140,7 @@ pub fn init_locals(stack: *Interpreter, r: Reader) !void {
 
 // TODO: this should be made flexible enough to allow ie a nested callback from a a host function
 // TODO: use stack.values to pass args/ret ?
-pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue) !u32 {
+pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
     const control = try self.ensure_parsed(mod);
 
     // NB: in the spec all locals are bundled into a "frame" object as a single
@@ -160,7 +160,7 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_res));
     stack.func = self;
 
-    //errdefer stack.showstack();
+    errdefer if (logga) stack.showstack();
     try stack.run_vm(in, r);
     if (stack.nvals() < self.n_res) return error.RuntimeError;
 
@@ -367,6 +367,13 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                             try mod.dbg_type(called.typeidx);
                             stack.showstack();
                             return error.WASMTrap;
+                        }
+                    }
+
+                    if (false) { // the flash flood
+                        if (called.name) |nam| {
+                            for (0..stack.frames.items.len) |_| severe("  ", .{});
+                            severe("{s}\n", .{nam});
                         }
                     }
 

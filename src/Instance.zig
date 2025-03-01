@@ -43,13 +43,13 @@ pub fn preglobals(self: *Instance) []const defs.StackValue {
     return self.globals_maybe_indir[0..self.mod.n_globals_import];
 }
 
-pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue) !u32 {
+pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue, logga: bool) !u32 {
     if (idx < self.mod.n_funcs_import or idx >= self.mod.n_imports + self.mod.funcs_internal.len) return error.OutOfRange;
     const func = &self.mod.funcs_internal[idx - self.mod.n_funcs_import];
 
     var stack: Interpreter = .init(self.mod.allocator);
     defer stack.deinit();
-    return stack.execute(func, self.mod, self, args, ret);
+    return stack.execute(func, self.mod, self, args, ret, logga);
 }
 
 pub fn mem_get_bytes(self: *Instance, pos: u32, len: u32) ![]u8 {

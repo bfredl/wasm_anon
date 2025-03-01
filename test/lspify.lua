@@ -12,13 +12,22 @@ capabilities = {
   positionEncoding = {'utf-8', 'utf-16'},
 }
 
-p = {
+init_p = {
   processId = 1337,
   rootUri = 'file:///home/lain/',
   capabilities = capabilities,
 }
 
-bytes = msgbytes("initialize", p, 0)
-fil = io.open("/tmp/filen", "wb")
-fil:write(bytes)
+
+open_p = { textDocument = {
+  uri='file:///home/lain/notes.html',
+  text='<html>foooo</hml>' ,
+  version=1,
+  languageId='html'
+} }
+
+fil = io.open("test/lsp_init.json_rpc", "wb")
+fil:write(msgbytes("initialize", init_p, 0))
+fil:write(msgbytes("initialized", vim.empty_dict(), nil))  -- do not ask
+fil:write(msgbytes("textDocument/didOpen", open_p, nil))
 fil:close()

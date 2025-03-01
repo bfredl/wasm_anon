@@ -1,3 +1,7 @@
 Content-Length: 244
 
-{"id": 0, "jsonrpc": "2.0", "method": "initialize", "params": {"rootUri": "file:///home/lain/", "capabilities": {"textDocument": {"publishDiagnostics": {"relatedInformation": true}}, "positionEncoding": ["utf-8", "utf-16"]}, "processId": 1337}}
+{"id": 0, "jsonrpc": "2.0", "method": "initialize", "params": {"rootUri": "file:///home/lain/", "capabilities": {"positionEncoding": ["utf-8", "utf-16"], "textDocument": {"publishDiagnostics": {"relatedInformation": true}}}, "processId": 1337}}Content-Length: 57
+
+{"method": "initialized", "jsonrpc": "2.0", "params": {}}Content-Length: 186
+
+{"method": "textDocument/didOpen", "jsonrpc": "2.0", "params": {"textDocument": {"uri": "file:///home/lain/notes.html", "version": 1, "languageId": "html", "text": "<html>foooo</hml>"}}}
