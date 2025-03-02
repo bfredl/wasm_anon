@@ -12,6 +12,7 @@ funcs: std.StringHashMapUnmanaged(defs.HostFunc),
 
 // bluff och båg: ONE function table
 func_table_size: u32 = 0,
+memory_size: u32 = 0, // size of imported memory in pages
 
 const GlobalImport = struct {
     ref: *defs.StackValue,

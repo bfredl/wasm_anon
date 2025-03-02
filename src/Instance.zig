@@ -28,13 +28,12 @@ pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
         .funcs_imported = try mod.allocator.alloc(defs.HostFunc, mod.n_funcs_import),
     };
 
-    if (mod.mem_limits.min > 0) {
-        try self.mem.appendNTimes(0, 0x10000 * mod.mem_limits.min);
-    }
     try mod.init_imports(&self, imports);
+    try self.init_memory(mod.mem_limits.min);
     if (mod.table_off > 0) try mod.table_section(&self);
     if (mod.element_off > 0) try mod.element_section(&self);
     try mod.init_data(self.mem.items, self.preglobals());
+
     return self;
 }
 
@@ -46,6 +45,13 @@ pub fn deinit(self: *Instance) void {
 
 pub fn preglobals(self: *Instance) []const defs.StackValue {
     return self.globals_maybe_indir[0..self.mod.n_globals_import];
+}
+
+pub fn init_memory(in: *Instance, n_pages: u32) !void {
+    if (n_pages == 0) return;
+    if (in.mem.items.len > 0) return error.@"whattaf?????";
+
+    try in.mem.appendNTimes(0, defs.page_size * n_pages);
 }
 
 pub fn init_func_table(in: *Instance, len: u32) !void {

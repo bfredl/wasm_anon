@@ -57,6 +57,8 @@ mem_limits: Limits = .{ .min = 0, .max = null },
 custom_dylink0_off: u32 = 0,
 custom_dylink0_end: u32 = 0,
 
+start_func: u32 = defs.funcref_nil,
+
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
 
@@ -97,6 +99,7 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .element => self.element_off = @intCast(fbs.pos),
             .data => self.data_off = @intCast(fbs.pos),
             .custom => try self.custom_section(r, len),
+            .start => return error.NotImplemented,
             else => {
                 // severe("NO {s}!\n", .{@tagName(kind)});
             },
@@ -187,10 +190,7 @@ pub fn import_section(self: *Module, r: Reader) !void {
                 _ = try readLimits(r);
             },
             .mem => {
-                // TODO: we don't really support memory shared between instances.
-                // an imported memory just works like a private one
-                const lim = try readLimits(r);
-                self.mem_limits = lim;
+                _ = try readLimits(r);
             },
             .global => {
                 _ = try r.readByte();
@@ -343,7 +343,7 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
     for (0..len) |_| {
         const mod = try readName(r);
         const name = try readName(r);
-        severe("{s}:{s} = \n", .{ mod, name });
+        dbg("{s}:{s} = \n", .{ mod, name });
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         const imp = imports orelse return error.InvalidArgument;
         switch (kind) {
@@ -365,8 +365,12 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
                 }
             },
             .mem => {
+                // TODO: we don't really support memory shared between instances.
+                // an imported memory just works like a private one
                 const limits = try readLimits(r);
-                _ = limits;
+                if (imp.memory_size < limits.min) return error.ImportLimitsMismatch;
+                if (limits.max) |m| if (imp.memory_size > m) return error.ImportLimitsMismatch;
+                try in.init_memory(imp.memory_size);
             },
             .global => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());

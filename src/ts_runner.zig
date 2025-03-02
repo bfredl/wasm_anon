@@ -18,8 +18,9 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const argv = std.os.argv;
-    if (argv.len < 2) return dbg("module name?\n", .{});
+    if (argv.len < 3) return dbg("ts_runner mod.wasm language\n", .{});
     const filearg = std.mem.span(argv[1]);
+    const langarg = std.mem.span(argv[2]);
     const buf = try util.readall(allocator, filearg);
     defer allocator.free(buf);
 
@@ -30,10 +31,16 @@ pub fn main() !void {
     try mod.dbg_exports();
 
     const dylink_info = try mod.get_dylink_info();
-    if (dylink_info) |info| dbg("DYLING: {}\n", .{info});
 
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit();
+
+    if (dylink_info) |info| {
+        dbg("DYLING: {}\n", .{info});
+        const pages = (info.memory_size + wasm_shelf.page_size - 1) / wasm_shelf.page_size;
+        imports.memory_size = pages;
+        imports.func_table_size = info.table_size;
+    }
 
     var stack_pointer: StackValue = .{ .i32 = 0 };
     var memory_base: StackValue = .{ .i32 = 0 };
@@ -55,4 +62,24 @@ pub fn main() !void {
 
     var in = try Instance.init(&mod, &imports);
     defer in.deinit();
+
+    // TODO: check how the order is really defined, this is just guesswork on the major scale
+    const initializers = &[_][]const u8{ "__wasm_call_ctors", "__wasm_apply_data_relocs", "_initialize" };
+
+    for (initializers) |init| {
+        if (try mod.lookup_export(init)) |sym| {
+            dbg("INIT: {s}\n", .{init});
+            if (sym.kind != .func) @panic("nej");
+            _ = try in.execute(sym.idx, &.{}, &.{}, true);
+        }
+    }
+
+    var lang_func_name: std.ArrayList(u8) = .init(allocator);
+    try std.fmt.format(lang_func_name.writer(), "tree_sitter_{s}", .{langarg});
+    const sym = try mod.lookup_export(lang_func_name.items) orelse @panic("no such lang");
+    if (sym.kind != .func) @panic("nej");
+    var res: [1]StackValue = undefined;
+    _ = try in.execute(sym.idx, &.{}, &res, true);
+
+    dbg("HERE IS THE RESULT: {}\n", .{res[0].i32});
 }
