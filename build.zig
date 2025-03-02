@@ -28,6 +28,25 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    const ts_exe = b.addExecutable(.{
+        .name = "ts_run",
+        .root_source_file = b.path("src/ts_runner.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (llvm) |val| ts_exe.use_llvm = val;
+
+    ts_exe.root_module.addImport("wasm_shelf", wasm_shelf);
+    b.installArtifact(ts_exe);
+
+    const run_cmd_ts = b.addRunArtifact(ts_exe);
+    run_cmd_ts.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_cmd_ts.addArgs(args);
+    }
+    const run_step_ts = b.step("ts", "tree-sitter thing");
+    run_step_ts.dependOn(&run_cmd_ts.step);
+
     const wast_exe = b.addExecutable(.{
         .name = "run_wast_tests",
         .root_source_file = b.path("src/wast_runner.zig"),
