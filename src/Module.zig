@@ -54,6 +54,9 @@ element_off: u32 = 0,
 
 mem_limits: Limits = .{ .min = 0, .max = null },
 
+custom_dylink0_off: u32 = 0,
+custom_dylink0_end: u32 = 0,
+
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
 
@@ -184,7 +187,10 @@ pub fn import_section(self: *Module, r: Reader) !void {
                 _ = try readLimits(r);
             },
             .mem => {
-                _ = try readLimits(r);
+                // TODO: we don't really support memory shared between instances.
+                // an imported memory just works like a private one
+                const lim = try readLimits(r);
+                self.mem_limits = lim;
             },
             .global => {
                 _ = try r.readByte();
@@ -337,7 +343,7 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
     for (0..len) |_| {
         const mod = try readName(r);
         const name = try readName(r);
-        dbg("{s}:{s} = ", .{ mod, name });
+        severe("{s}:{s} = \n", .{ mod, name });
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         const imp = imports orelse return error.InvalidArgument;
         switch (kind) {
@@ -352,8 +358,11 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
             .table => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
                 const limits = try readLimits(r);
-                _ = typ;
-                _ = limits;
+                if (typ == .funcref) {
+                    if (imp.func_table_size < limits.min) return error.ImportLimitsMismatch;
+                    if (limits.max) |m| if (imp.func_table_size > m) return error.ImportLimitsMismatch;
+                    try in.init_func_table(imp.func_table_size);
+                }
             },
             .mem => {
                 const limits = try readLimits(r);
@@ -403,10 +412,8 @@ pub fn table_section(self: *Module, in: *Instance) !void {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         const limits = try readLimits(r);
         dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
-        if (typ == .funcref and limits.min > 0) {
-            if (in.funcref_table.len > 0) return error.NotImplemented;
-            in.funcref_table = try self.allocator.alloc(u32, limits.min);
-            @memset(in.funcref_table, defs.funcref_nil); // null
+        if (typ == .funcref) {
+            try in.init_func_table(limits.min);
         }
     }
 }
@@ -481,7 +488,42 @@ pub fn custom_section(self: *Module, r: Reader, sec_len: usize) !void {
                 r.context.pos = @min(end_pos, r.context.pos + size);
             }
         }
+    } else if (std.mem.eql(u8, name, "dylink.0")) {
+        self.custom_dylink0_off = @intCast(r.context.pos);
+        self.custom_dylink0_end = @intCast(end_pos);
     }
+}
+
+pub const DylinkInfo = struct {
+    memory_size: u32,
+    memory_align: u32,
+    table_size: u32,
+    table_align: u32,
+};
+
+pub fn get_dylink_info(self: *Module) !?DylinkInfo {
+    if (self.custom_dylink0_off == 0) return null;
+    var fbs = self.fbs_at(self.custom_dylink0_off);
+    const r = fbs.reader();
+    while (r.context.pos < self.custom_dylink0_end) {
+        const kinda = try r.readByte();
+        const size = try readu(r);
+        if (kinda == 1) { // WASM_DYLINK_MEMORY_INFO
+            const memory_size = try readu(r);
+            const memory_align = try readu(r);
+            const table_size = try readu(r);
+            const table_align = try readu(r);
+            return .{
+                .memory_size = memory_size,
+                .memory_align = memory_align,
+                .table_size = table_size,
+                .table_align = table_align,
+            };
+        } else {
+            r.context.pos += size;
+        }
+    }
+    return null;
 }
 
 pub fn dump_counts(self: *Module) void {

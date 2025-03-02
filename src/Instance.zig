@@ -48,6 +48,13 @@ pub fn preglobals(self: *Instance) []const defs.StackValue {
     return self.globals_maybe_indir[0..self.mod.n_globals_import];
 }
 
+pub fn init_func_table(in: *Instance, len: u32) !void {
+    if (len == 0) return;
+    if (in.funcref_table.len > 0) return error.NotImplemented;
+    in.funcref_table = try in.mod.allocator.alloc(u32, len);
+    @memset(in.funcref_table, defs.funcref_nil); // null
+}
+
 pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue, logga: bool) !u32 {
     if (idx < self.mod.n_funcs_import or idx >= self.mod.n_imports + self.mod.funcs_internal.len) return error.OutOfRange;
     const func = &self.mod.funcs_internal[idx - self.mod.n_funcs_import];

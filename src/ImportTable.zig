@@ -10,6 +10,9 @@ allocator: std.mem.Allocator,
 globals: std.StringHashMapUnmanaged(GlobalImport),
 funcs: std.StringHashMapUnmanaged(defs.HostFunc),
 
+// bluff och båg: ONE function table
+func_table_size: u32 = 0,
+
 const GlobalImport = struct {
     ref: *defs.StackValue,
     typ: defs.ValType,
