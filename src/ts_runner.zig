@@ -6,6 +6,10 @@ const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
 const Instance = wasm_shelf.Instance;
 
+const c = @cImport({
+    @cInclude("./ts_defs.h");
+});
+
 fn trap(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     _ = args_ret;
     _ = data;
@@ -82,4 +86,9 @@ pub fn main() !void {
     _ = try in.execute(sym.idx, &.{}, &res, true);
 
     dbg("HERE IS THE RESULT: {}\n", .{res[0].i32});
+
+    var langinfo: c.LanguageInWasmMemory = undefined;
+    const mem = try in.mem_get_bytes(res[0].u32(), @sizeOf(c.LanguageInWasmMemory));
+    @memcpy(std.mem.asBytes(&langinfo), mem);
+    dbg("info: {}\n", .{langinfo});
 }

@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) void {
     if (llvm) |val| ts_exe.use_llvm = val;
 
     ts_exe.root_module.addImport("wasm_shelf", wasm_shelf);
+    ts_exe.root_module.addIncludePath(b.path("src/"));
     b.installArtifact(ts_exe);
 
     const run_cmd_ts = b.addRunArtifact(ts_exe);
