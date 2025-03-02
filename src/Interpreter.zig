@@ -342,10 +342,11 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 const idx, const chktyp = if (inst == .call_indirect) funcidx: {
                     const typidx = try readLeb(r, u32);
                     const tblidx = try readLeb(r, u32);
-                    _ = tblidx; // clown face emoji
+                    if (tblidx > 0) return error.NotImplemented; // clown face emoji
                     const eidx: u32 = @bitCast((try stack.pop()).i32);
-                    if (eidx >= mod.funcref_table.len) return error.WASMTrap;
-                    const funcidx = mod.funcref_table[eidx];
+                    if (eidx >= in.funcref_table.len) return error.WASMTrap;
+                    const funcidx = in.funcref_table[eidx];
+                    if (funcidx == defs.funcref_nil) return error.WASMTrap;
                     break :funcidx .{ funcidx, typidx };
                 } else .{ try readLeb(r, u32), null };
 

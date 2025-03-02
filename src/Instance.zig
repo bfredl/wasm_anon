@@ -12,6 +12,9 @@ mem: std.ArrayList(u8),
 globals_maybe_indir: []defs.StackValue,
 funcs_imported: []defs.HostFunc,
 
+// this a bit of a hack, an instance can has multiple funcref tables
+funcref_table: []u32 = &.{},
+
 pub fn get_global(self: *Instance, idx: u32) *defs.StackValue {
     const g = &self.globals_maybe_indir[idx];
     return if (idx < self.mod.n_globals_import) g.indir else g;
@@ -29,6 +32,8 @@ pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
         try self.mem.appendNTimes(0, 0x10000 * mod.mem_limits.min);
     }
     try mod.init_imports(&self, imports);
+    if (mod.table_off > 0) try mod.table_section(&self);
+    if (mod.element_off > 0) try mod.element_section(&self);
     try mod.init_data(self.mem.items, self.preglobals());
     return self;
 }

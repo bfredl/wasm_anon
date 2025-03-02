@@ -69,7 +69,7 @@ pub fn main() !u8 {
 
     const Toplevel = enum { module, invoke, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 
-    // if (specname) |nam| dbg("time to {s}: \n", .{nam});
+    if (specname) |nam| dbg("time to {s}: \n", .{nam});
 
     while (t.nonws()) |_| {
         dbg("\rtest at {}:", .{t.lnum + 1});

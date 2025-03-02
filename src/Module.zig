@@ -49,10 +49,10 @@ globals_off: u32 = 0,
 n_imports: u32 = 0,
 imports_off: u32 = 0,
 
-mem_limits: Limits = .{ .min = 0, .max = null },
+table_off: u32 = 0,
+element_off: u32 = 0,
 
-// this a bit of a hack, I think a module can has multiple funcref tables
-funcref_table: []u32 = &.{},
+mem_limits: Limits = .{ .min = 0, .max = null },
 
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
@@ -90,8 +90,8 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
             .export_ => self.export_off = @intCast(fbs.pos),
 
             .code => try self.code_section(r),
-            .table => try self.table_section(r),
-            .element => try self.element_section(r),
+            .table => self.table_off = @intCast(fbs.pos),
+            .element => self.element_off = @intCast(fbs.pos),
             .data => self.data_off = @intCast(fbs.pos),
             .custom => try self.custom_section(r, len),
             else => {
@@ -394,7 +394,9 @@ pub fn type_arity(self: *const Module, type_idx: u32) !struct { u16, u16 } {
     return .{ n_params, n_res };
 }
 
-pub fn table_section(self: *Module, r: Reader) !void {
+pub fn table_section(self: *Module, in: *Instance) !void {
+    var fbs = self.fbs_at(self.table_off);
+    const r = fbs.reader();
     const len = try readu(r);
     dbg("Tables: {}\n", .{len});
     for (0..len) |_| {
@@ -402,27 +404,29 @@ pub fn table_section(self: *Module, r: Reader) !void {
         const limits = try readLimits(r);
         dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
         if (typ == .funcref and limits.min > 0) {
-            if (self.funcref_table.len > 0) return error.NotImplemented;
-            self.funcref_table = try self.allocator.alloc(u32, limits.min);
-            @memset(self.funcref_table, 0xffffffff); // TODO: or zero?? what is it??
+            if (in.funcref_table.len > 0) return error.NotImplemented;
+            in.funcref_table = try self.allocator.alloc(u32, limits.min);
+            @memset(in.funcref_table, defs.funcref_nil); // null
         }
     }
 }
 
-pub fn element_section(self: *Module, r: Reader) !void {
+pub fn element_section(self: *Module, in: *Instance) !void {
+    var fbs = self.fbs_at(self.element_off);
+    const r = fbs.reader();
     const len = try readu(r);
     dbg("Elements: {}\n", .{len});
     for (0..len) |_| {
         const kinda = try readu(r);
         if (kinda == 0) {
-            const offset: usize = @intCast((try Interpreter.eval_constant_expr(r, .i32, &.{})).i32); // TODO: fail
+            const offset: usize = @intCast((try Interpreter.eval_constant_expr(r, .i32, in.preglobals())).i32); // TODO: fail
             const elen = try readu(r);
-            if (offset + len > self.funcref_table.len) {
+            if (offset + len > in.funcref_table.len) {
                 return error.InvalidFormat;
             }
             for (0..elen) |i| {
                 const item = try readu(r);
-                self.funcref_table[offset + i] = item;
+                in.funcref_table[offset + i] = item;
             }
         } else {
             severe("KINDA: {}\n", .{kinda});
