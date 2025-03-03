@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const llvm = b.option(bool, "llvm", "use llvm");
 
-    const wasm_shelf = b.createModule(.{
+    const wasm_shelf = b.addModule("wasm_shelf", .{
         .root_source_file = b.path("src/wasm_shelf.zig"),
     });
 
