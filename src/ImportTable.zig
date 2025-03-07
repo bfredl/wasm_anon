@@ -12,6 +12,9 @@ funcs: std.StringHashMapUnmanaged(defs.HostFunc),
 
 // bluff och båg: ONE function table
 func_table_size: u32 = 0,
+// assumes host callbacks are dense in the beginning of the imported table :p
+func_table_funcs: std.ArrayListUnmanaged(defs.HostFunc),
+
 memory_size: u32 = 0, // size of imported memory in pages
 
 const GlobalImport = struct {
@@ -24,6 +27,7 @@ pub fn init(allocator: std.mem.Allocator) ImportTable {
         .allocator = allocator,
         .globals = .{},
         .funcs = .{},
+        .func_table_funcs = .{},
     };
 }
 
@@ -40,4 +44,9 @@ pub fn add_global(self: *ImportTable, name: []const u8, ref: *defs.StackValue, t
 // Note: "ref" must point to a full StackValue. Full 64-bits will be overwritten even if the type is 32-bit internally
 pub fn add_func(self: *ImportTable, name: []const u8, def: defs.HostFunc) !void {
     try self.funcs.put(self.allocator, name, def);
+}
+
+pub fn add_func_to_table(self: *ImportTable, def: defs.HostFunc) !u32 {
+    try self.func_table_funcs.append(self.allocator, def);
+    return @intCast(self.func_table_funcs.items.len - 1);
 }

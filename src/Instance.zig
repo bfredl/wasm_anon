@@ -12,6 +12,9 @@ mem: std.ArrayList(u8),
 globals_maybe_indir: []defs.StackValue,
 funcs_imported: []defs.HostFunc,
 
+// funcs not directly imported, but might be visible in funcref_table
+funcs_extra: []defs.HostFunc,
+
 // this a bit of a hack, an instance can has multiple funcref tables
 funcref_table: []u32 = &.{},
 
@@ -26,6 +29,7 @@ pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
         .mem = .init(mod.allocator),
         .globals_maybe_indir = try mod.allocator.alloc(defs.StackValue, mod.n_globals_import + mod.n_globals_internal),
         .funcs_imported = try mod.allocator.alloc(defs.HostFunc, mod.n_funcs_import),
+        .funcs_extra = try mod.allocator.alloc(defs.HostFunc, if (imports) |i| i.func_table_funcs.items.len else 0),
     };
 
     try mod.init_imports(&self, imports);
@@ -33,6 +37,10 @@ pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
     if (mod.table_off > 0) try mod.table_section(&self);
     if (mod.element_off > 0) try mod.element_section(&self);
     try mod.init_data(self.mem.items, self.preglobals());
+
+    if (imports) |imp| for (imp.func_table_funcs.items, 0..) |f, i| {
+        self.funcs_extra[i] = f;
+    };
 
     return self;
 }
