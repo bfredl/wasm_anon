@@ -350,14 +350,19 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                     break :funcidx .{ funcidx, typidx };
                 } else .{ try readLeb(r, u32), null };
 
-                if (idx >= mod.n_funcs_import + mod.funcs_internal.len) @panic("SHAKING FEAR");
-                if (idx < mod.n_funcs_import) {
-                    const f = in.funcs_imported[idx];
+                const extra = idx & (1 << 31) != 0;
+                const lowidx = idx & ~@as(u32, 1 << 31);
+                if (if (extra) lowidx < in.funcs_extra.len else idx < mod.n_funcs_import) {
+                    const f = if (extra) in.funcs_extra[lowidx] else in.funcs_imported[idx];
                     const level = stack.values.items.len - f.n_args;
+                    if (chktyp) |typidx| {
+                        const n_args, const n_res = try mod.type_arity(typidx);
+                        if (n_args != f.n_args or n_res != f.n_res) return error.WASMTrap;
+                    }
                     if (f.n_res > f.n_args) try stack.values.appendNTimes(.{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
                     try f.cb(stack.values.items[level..], in, f.data);
                     if (f.n_args > f.n_res) stack.values.items.len = level + f.n_res;
-                } else {
+                } else if (idx < mod.n_funcs_import + mod.funcs_internal.len) {
                     const called = &mod.funcs_internal[idx - mod.n_funcs_import];
                     const called_control = try called.ensure_parsed(mod);
                     if (chktyp) |typidx| {
@@ -398,7 +403,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                     // entire body is implicitly a block, producing the return values
                     try stack.push_label(@intCast(control.len - 1), @intCast(stack.func.n_res));
                     c_ip = 0;
-                }
+                } else @panic("SHAKING FEAR");
             },
             .end => {
                 c_ip += 1;

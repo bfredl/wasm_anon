@@ -34,13 +34,19 @@ pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
 
     try mod.init_imports(&self, imports);
     try self.init_memory(mod.mem_limits.min);
+    if (imports) |imp| {
+        if (self.funcref_table.len > 0) {
+            if (self.funcref_table.len < imp.func_table_funcs.items.len) return error.ImportLimitsMismatch;
+            for (imp.func_table_funcs.items, 0..) |f, i| {
+                self.funcs_extra[i] = f;
+                // this is a bit of a hack, need a better pseudo-reified "store"
+                self.funcref_table[i] = (1 << 31) + @as(u32, @intCast(i));
+            }
+        }
+    }
     if (mod.table_off > 0) try mod.table_section(&self);
     if (mod.element_off > 0) try mod.element_section(&self);
     try mod.init_data(self.mem.items, self.preglobals());
-
-    if (imports) |imp| for (imp.func_table_funcs.items, 0..) |f, i| {
-        self.funcs_extra[i] = f;
-    };
 
     return self;
 }

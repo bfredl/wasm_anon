@@ -430,13 +430,14 @@ pub fn element_section(self: *Module, in: *Instance) !void {
     for (0..len) |_| {
         const kinda = try readu(r);
         if (kinda == 0) {
-            const offset: usize = @intCast((try Interpreter.eval_constant_expr(r, .i32, in.preglobals())).i32); // TODO: fail
+            const offset: usize = @intCast((try Interpreter.eval_constant_expr(r, .i32, in.preglobals())).i32);
             const elen = try readu(r);
             if (offset + len > in.funcref_table.len) {
                 return error.InvalidFormat;
             }
             for (0..elen) |i| {
                 const item = try readu(r);
+                if (item >= self.funcs_internal.len + self.n_funcs_import) return error.InvalidFormat;
                 in.funcref_table[offset + i] = item;
             }
         } else {
