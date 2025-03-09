@@ -173,7 +173,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     var control = stack.func.control.?;
     const mod = in.mod;
 
-    const do_locals_opt = true;
+    const do_locals_opt = false;
 
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
