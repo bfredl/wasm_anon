@@ -173,11 +173,9 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     var control = stack.func.control.?;
     const mod = in.mod;
 
-    const do_locals_opt = false;
+    const do_locals_opt = true;
 
     while (true) {
-        const pos: u32 = @intCast(r.context.pos);
-
         while (do_locals_opt and stack.values.items.len < stack.values.capacity and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_get)) {
             r.context.pos += 1;
             const idx = try readu(r);
@@ -186,6 +184,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             mod.istat[@intFromEnum(defs.OpCode.local_get)] +|= 1;
         }
 
+        const pos: u32 = @intCast(r.context.pos);
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         dbg("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, stack.values.items.len, stack.labels.items.len });
         var label_target: ?u32 = null;
