@@ -59,6 +59,8 @@ custom_dylink0_end: u32 = 0,
 
 start_func: u32 = defs.funcref_nil,
 
+istat: [256]u32 = @splat(0),
+
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
 
@@ -550,6 +552,15 @@ pub fn dump_counts(self: *Module) void {
         }
     }
     severe("\n\n", .{});
+
+    var summa: u64 = 0;
+    for (self.istat, 0..) |count, i| {
+        if (count > 0) {
+            severe("{} : {} {s}\n", .{ count, i, @tagName(@as(defs.OpCode, @enumFromInt(i))) });
+            summa +|= count;
+        }
+    }
+    severe("{}: summa\n\n", .{summa});
 }
 
 test "basic functionality" {

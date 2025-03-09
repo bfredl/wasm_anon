@@ -173,11 +173,23 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     var control = stack.func.control.?;
     const mod = in.mod;
 
+    const do_locals_opt = true;
+
     while (true) {
         const pos: u32 = @intCast(r.context.pos);
+
+        while (do_locals_opt and stack.values.items.len < stack.values.capacity and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_get)) {
+            r.context.pos += 1;
+            const idx = try readu(r);
+            const val = stack.local(idx).*;
+            stack.values.appendAssumeCapacity(val);
+            mod.istat[@intFromEnum(defs.OpCode.local_get)] +|= 1;
+        }
+
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         dbg("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, stack.values.items.len, stack.labels.items.len });
         var label_target: ?u32 = null;
+        mod.istat[@intFromEnum(inst)] +|= 1;
         switch (inst) {
             .unreachable_ => {
                 return error.WASMTrap;
@@ -357,7 +369,11 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                     const level = stack.values.items.len - f.n_args;
                     if (chktyp) |typidx| {
                         const n_args, const n_res = try mod.type_arity(typidx);
-                        if (n_args != f.n_args or n_res != f.n_res) return error.WASMTrap;
+                        if (n_args != f.n_args or n_res != f.n_res) {
+                            severe("checked {} or {}\n", .{ idx, lowidx });
+                            severe("wanted a {}->{} func but found a {}->{}, cringe!\n", .{ n_args, n_res, f.n_args, f.n_res });
+                            return error.WASMTrap;
+                        }
                     }
                     if (f.n_res > f.n_args) try stack.values.appendNTimes(.{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
                     try f.cb(stack.values.items[level..], in, f.data);
@@ -556,7 +572,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                         const dst = try stack.pop();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
                         const memtype = defs.memtype(tag);
-                        if (ea + @sizeOf(memtype) > in.mem.items.len) return error.WASMTrap;
+                        if (ea + @sizeOf(memtype) > in.mem.items.len) {
+                            severe("write at {} size {} OOB (max {})\n", .{ ea, @sizeOf(memtype), in.mem.items.len });
+                            return error.WASMTrap;
+                        }
                         const src = @field(val, name[0..3]);
                         const foo: memtype = if (@typeInfo(memtype) == .int) @truncate(src) else src;
                         @memcpy(in.mem.items[ea..][0..@sizeOf(memtype)], std.mem.asBytes(&foo));
@@ -568,6 +587,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 }
             },
         }
+
         if (label_target) |idx| {
             c_ip = try stack.pop_and_jump_labels(idx);
             r.context.pos = control[c_ip].off;
@@ -580,6 +600,15 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 _ = try read.blocktype(r);
             } else {
                 c_ip -= 1; // messy!
+            }
+        } else {
+            if (do_locals_opt and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_set)) {
+                r.context.pos += 1;
+                const val = try stack.pop();
+                const idx = try readu(r);
+                stack.local(idx).* = val;
+                mod.istat[@intFromEnum(defs.OpCode.local_set)] +|= 1;
+                continue;
             }
         }
         if (c_ip == control.len) {

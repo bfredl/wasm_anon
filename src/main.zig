@@ -58,6 +58,7 @@ fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void
     _ = in;
     const arg = args_ret[0].i32;
     dbg("wasi exit: {}\n", .{arg});
+    // std.posix.exit(0); // for benchmarking which expect 0 ret..
     return error.WASMTrap;
 }
 
@@ -138,6 +139,12 @@ fn wasi_clock_time_get(args_ret: []StackValue, in: *Instance, data: *anyopaque) 
 }
 
 fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator) !void {
+    const argv = std.os.argv;
+    if (argv.len >= 4) {
+        const fd = try std.posix.openZ(argv[3], .{ .ACCMODE = .RDONLY }, 0);
+        try std.posix.dup2(fd, 0);
+    }
+
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit();
 
