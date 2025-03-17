@@ -542,11 +542,18 @@ pub fn dump_counts(self: *Module) void {
     }
 
     severe("\n\n", .{});
-    for (self.funcs_internal) |i| {
+    var worst_count: u64 = 0;
+    var worst_pos: u32 = 0xffffffff;
+
+    for (self.funcs_internal, 0..) |i, fi| {
         if (i.control) |c| {
             for (c, 0..) |ci, cidx| {
                 if (ci.count > 0) {
-                    severe("{} : loop {} in {s}\n", .{ ci.count, cidx, i.name orelse "???" });
+                    severe("{} : loop {} in {} {s}\n", .{ ci.count, cidx, fi, i.name orelse "???" });
+                }
+                if (ci.count > worst_count) {
+                    worst_count = ci.count;
+                    worst_pos = ci.off;
                 }
             }
         }
@@ -561,7 +568,13 @@ pub fn dump_counts(self: *Module) void {
         }
     }
     severe("{}: summa\n\n", .{summa});
+
+    if (worst_count > 0) {
+        severe("THE ABSOLUTE WORST LOOP: {}\n", .{worst_count});
+        self.disasm_block(worst_pos) catch {};
+    }
 }
+pub const disasm_block = @import("./disasm.zig").disasm_block;
 
 test "basic functionality" {
     try testing.expect(11 == 10);
