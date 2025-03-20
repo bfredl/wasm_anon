@@ -475,13 +475,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                         const n: u32 = @bitCast((try stack.pop()).i32);
                         const s: u32 = @bitCast((try stack.pop()).i32);
                         const d: u32 = @bitCast((try stack.pop()).i32);
-                        const m = in.mem.items;
-                        if (@as(u64, s) + n > m.len or @as(u64, d) + n > m.len) return error.WASMTrap;
-                        if (d <= s) {
-                            std.mem.copyForwards(u8, m[d..][0..n], m[s..][0..n]);
-                        } else {
-                            std.mem.copyBackwards(u8, m[d..][0..n], m[s..][0..n]);
-                        }
+                        try in.memmove(d, s, n);
                     },
                     inline else => |c| {
                         if (@intFromEnum(c) < 8) {

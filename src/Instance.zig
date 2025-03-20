@@ -92,3 +92,13 @@ pub fn mem_get_bytes(self: *Instance, pos: u32, len: u32) ![]u8 {
 pub fn mem_get_as(self: *Instance, comptime item: type, pos: u32, count: u32) []align(1) item {
     return @ptrCast(self.mem_get_bytes(pos, count * @sizeOf(item)));
 }
+
+pub fn memmove(self: *Instance, d: u32, s: u32, n: u32) !void {
+    const m = self.mem.items;
+    if (@as(u64, s) + n > m.len or @as(u64, d) + n > m.len) return error.WASMTrap;
+    if (d <= s) {
+        std.mem.copyForwards(u8, m[d..][0..n], m[s..][0..n]);
+    } else {
+        std.mem.copyBackwards(u8, m[d..][0..n], m[s..][0..n]);
+    }
+}
