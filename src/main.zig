@@ -5,18 +5,34 @@ const util = @import("./util.zig");
 const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
 const Instance = wasm_shelf.Instance;
+const clap = @import("clap");
 
-pub fn usage() void {
-    dbg("Read the source code.\n", .{});
-}
+const params = clap.parseParamsComptime(
+    \\-h, --help             Display this help and exit.
+    \\-f, --func <str>       call function
+    \\-i, --inspect          inspect imports and exports
+    \\--stdin <str>          override wasi stdin
+    \\<str>
+    \\
+);
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
     const argv = std.os.argv;
-    if (argv.len < 2) return usage();
-    const filearg = std.mem.span(argv[1]);
+    var diag = clap.Diagnostic{};
+    var param = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+        .allocator = gpa.allocator(),
+    }) catch |err| {
+        // Report useful error and exit.
+        diag.report(std.io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+    defer param.deinit();
+
+    const filearg = param.positionals[0] orelse @panic("usage");
     const buf = try util.readall(allocator, filearg);
     defer allocator.free(buf);
 
@@ -24,18 +40,20 @@ pub fn main() !void {
     defer mod.deinit();
     defer mod.dump_counts();
 
-    if (argv.len == 2) {
+    if (param.args.inspect > 0) {
         try mod.dbg_imports();
         try mod.dbg_exports();
-        return usage();
+        return;
+    }
+
+    if (param.args.func) |func| {
+        _ = func;
+        @panic("NYI");
+    } else {
+        return wasi_run(&mod, allocator, @ptrCast(param.args.stdin));
     }
 
     const callname = std.mem.span(argv[2]);
-    if (std.mem.eql(u8, callname, "--wasi")) {
-        return wasi_run(&mod, allocator);
-    }
-
-    if (argv.len < 4) return usage();
 
     var in = try Instance.init(&mod, null);
     defer in.deinit();
@@ -138,10 +156,9 @@ fn wasi_clock_time_get(args_ret: []StackValue, in: *Instance, data: *anyopaque) 
     }
 }
 
-fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator) !void {
-    const argv = std.os.argv;
-    if (argv.len >= 4) {
-        const fd = try std.posix.openZ(argv[3], .{ .ACCMODE = .RDONLY }, 0);
+fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8) !void {
+    if (stdin) |path| {
+        const fd = try std.posix.openZ(path, .{ .ACCMODE = .RDONLY }, 0);
         try std.posix.dup2(fd, 0);
     }
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-pub fn readall(allocator: std.mem.Allocator, filename: []u8) ![]u8 {
+pub fn readall(allocator: std.mem.Allocator, filename: []const u8) ![]u8 {
     const fil = try std.fs.cwd().openFile(filename, .{});
     const stat = try std.posix.fstat(fil.handle);
     const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
