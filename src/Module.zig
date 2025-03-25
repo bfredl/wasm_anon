@@ -34,6 +34,7 @@ fn readLimits(r: Reader) !Limits {
 allocator: std.mem.Allocator,
 raw: []const u8,
 n_funcs_import: u32 = 0,
+funcs_imported_types: []u32 = 0,
 // TODO: {.ptr = undefined, .size = 0} would be a useful idiom..
 funcs_internal: []Function = &.{},
 types: []u32 = undefined,
@@ -178,13 +179,17 @@ pub fn import_section(self: *Module, r: Reader) !void {
     const len = try readu(r);
     dbg("IMPORTS: {}\n", .{len});
     self.n_imports = len;
+    // greedy: assume most imports are functions
+    var func_types: std.ArrayList(u32) = try .initWithCapacity(self.allocator, len);
+    errdefer func_types.deinit();
     for (0..len) |_| {
         _ = try readName(r);
         _ = try readName(r);
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         switch (kind) {
             .func => {
-                _ = try readu(r);
+                const idx = try readu(r);
+                try func_types.append(idx);
                 self.n_funcs_import += 1;
             },
             .table => {
@@ -201,6 +206,7 @@ pub fn import_section(self: *Module, r: Reader) !void {
             },
         }
     }
+    self.funcs_imported_types = func_types.toOwnedSlice();
 
     // if (dbg == severe) try self.dbg_imports();
 }

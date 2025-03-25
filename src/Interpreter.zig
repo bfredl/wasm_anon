@@ -67,6 +67,10 @@ pub fn push(self: *Interpreter, value: StackValue) !void {
     try self.values.append(value);
 }
 
+pub fn pushc(self: *Interpreter, value: StackValue) !void {
+    try self.values.appendAssumeCapacity(value);
+}
+
 pub fn push_multiple(self: *Interpreter, values: []const StackValue) !void {
     try self.values.appendSlice(values);
 }
@@ -173,14 +177,18 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     var control = stack.func.control.?;
     const mod = in.mod;
 
+    // note: this is is just to allow appendAssumeCapacity and similar.
+    // with nested calls, unused space is passed forward to the nested function
+    try stack.values.ensure_unused_capacity(stack.func.val_stack_max_height);
+
     const do_locals_opt = true;
 
     while (true) {
-        while (do_locals_opt and stack.values.items.len < stack.values.capacity and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_get)) {
+        while (do_locals_opt and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_get)) {
             r.context.pos += 1;
             const idx = try readu(r);
             const val = stack.local(idx).*;
-            stack.values.appendAssumeCapacity(val);
+            stack.pushc(val);
             mod.istat[@intFromEnum(defs.OpCode.local_get)] +|= 1;
         }
 
@@ -210,19 +218,19 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .i32_const => {
                 const val = try readLeb(r, i32);
-                try stack.push(.{ .i32 = val });
+                try stack.pushc(.{ .i32 = val });
             },
             .i64_const => {
                 const val = try readLeb(r, i64);
-                try stack.push(.{ .i64 = val });
+                try stack.pushc(.{ .i64 = val });
             },
             .f32_const => {
                 const val = try read.readf(r, f32);
-                try stack.push(.{ .f32 = val });
+                try stack.pushc(.{ .f32 = val });
             },
             .f64_const => {
                 const val = try read.readf(r, f64);
-                try stack.push(.{ .f64 = val });
+                try stack.pushc(.{ .f64 = val });
             },
             .i32_eqz => {
                 const dst = try stack.top();
@@ -240,7 +248,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 // NICE JOB ZIG CORE DEVS
                 var val: StackValue = undefined;
                 val = stack.local(idx).*;
-                try stack.push(val);
+                try stack.pushc(val);
             },
             .local_set => {
                 const idx = try readu(r);
@@ -254,7 +262,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .global_get => {
                 const idx = try readu(r);
-                try stack.push(in.get_global(idx).*);
+                try stack.pushc(in.get_global(idx).*);
             },
             .global_set => {
                 const idx = try readu(r);
@@ -272,7 +280,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             .memory_size => {
                 if (try r.readByte() != 0) return error.InvalidFormat;
                 const size: i32 = @intCast(in.mem.items.len / 0x10000);
-                try stack.push(.{ .i32 = size });
+                try stack.pushc(.{ .i32 = size });
             },
             .loop => {
                 c_ip += 1;
@@ -415,6 +423,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                     stack.func = called;
                     control = called_control;
                     stack.enter_frame();
+                    try stack.values.ensure_unused_capacity(called.val_stack_max_height);
                     // entire body is implicitly a block, producing the return values
                     try stack.push_label(@intCast(control.len - 1), @intCast(stack.func.n_res));
                     c_ip = 0;
