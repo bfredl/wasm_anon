@@ -533,48 +533,80 @@ pub fn get_dylink_info(self: *Module) !?DylinkInfo {
     return null;
 }
 
-pub fn dump_counts(self: *Module) void {
+fn flag(flags: []const u8, f: u8) bool {
+    return std.mem.indexOfScalar(u8, flags, f) != null;
+}
+
+pub fn dump_counts(self: *Module, flags: []const u8) void {
+    const all = flag(flags, 'A');
+    const fo = self.n_funcs_import;
+
     severe("\n\n", .{});
-    for (self.funcs_internal) |i| {
-        if (i.call_count > 0) {
-            severe("{} : {s}\n", .{ i.call_count, i.name orelse "???" });
+    if (all or flag(flags, 'f')) {
+        for (self.funcs_internal, 0..) |i, fi| {
+            if (i.call_count > 0) {
+                severe("{} : {} {s}\n", .{ i.call_count, fo + fi, i.name orelse "???" });
+            }
         }
+        severe("\n\n", .{});
     }
 
-    severe("\n\n", .{});
-    var worst_count: u64 = 0;
-    var worst_pos: u32 = 0xffffffff;
+    if (all or flag(flags, 'i')) {
+        var summa: u64 = 0;
+        for (self.istat, 0..) |count, i| {
+            if (count > 0) {
+                severe("{} : {} {s}\n", .{ count, i, @tagName(@as(defs.OpCode, @enumFromInt(i))) });
+                summa +|= count;
+            }
+        }
+        severe("{}: summa\n\n", .{summa});
+    }
 
-    for (self.funcs_internal, 0..) |i, fi| {
-        if (i.control) |c| {
-            for (c, 0..) |ci, cidx| {
-                if (ci.count > 0) {
-                    severe("{} : loop {} in {} {s}\n", .{ ci.count, cidx, fi, i.name orelse "???" });
-                }
-                if (ci.count > worst_count) {
-                    worst_count = ci.count;
-                    worst_pos = ci.off;
+    if (all or flag(flags, 'l') or flag(flags, 'w')) {
+        var worst_count: u64 = 0;
+        var worst_pos: u32 = 0xffffffff;
+
+        for (self.funcs_internal, 0..) |i, fi| {
+            if (i.control) |c| {
+                for (c, 0..) |ci, cidx| {
+                    if ((all or flag(flags, 'l')) and ci.count > 0) {
+                        severe("{} : {}:{} {s} \n", .{ ci.count, fo + fi, cidx, i.name orelse "???" });
+                    }
+                    if (ci.count > worst_count) {
+                        worst_count = ci.count;
+                        worst_pos = ci.off;
+                    }
                 }
             }
         }
-    }
-    severe("\n\n", .{});
+        severe("\n\n", .{});
 
-    var summa: u64 = 0;
-    for (self.istat, 0..) |count, i| {
-        if (count > 0) {
-            severe("{} : {} {s}\n", .{ count, i, @tagName(@as(defs.OpCode, @enumFromInt(i))) });
-            summa +|= count;
+        if ((all or flag(flags, 'w')) and worst_count > 0) {
+            severe("THE ABSOLUTE WORST LOOP: {}\n", .{worst_count});
+            self.disasm_block(worst_pos, false) catch {};
         }
-    }
-    severe("{}: summa\n\n", .{summa});
-
-    if (worst_count > 0) {
-        severe("THE ABSOLUTE WORST LOOP: {}\n", .{worst_count});
-        self.disasm_block(worst_pos) catch {};
     }
 }
 pub const disasm_block = @import("./disasm.zig").disasm_block;
+
+pub fn dbg_disasm(self: *Module, spec: []const u8) !void {
+    const brk = std.mem.indexOfScalar(u8, spec, ':');
+    const func = try std.fmt.parseInt(u32, if (brk) |b| spec[0..b] else spec, 10);
+    const blk = if (brk) |b| try std.fmt.parseInt(u32, spec[b + 1 ..], 10) else 0;
+
+    if (func < self.n_funcs_import) {
+        severe("IMPORTED :PPP\n", .{});
+        return;
+    } else if (func >= self.n_funcs_import + self.funcs_internal.len) {
+        @panic("out of bounds!\n");
+    }
+
+    const f = &self.funcs_internal[func - self.n_funcs_import];
+    const c = try f.ensure_parsed(self);
+
+    if (blk >= c.len) @panic("label out of bounds");
+    try self.disasm_block(c[blk].off, blk == 0);
+}
 
 test "basic functionality" {
     try testing.expect(11 == 10);

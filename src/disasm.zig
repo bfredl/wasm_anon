@@ -7,8 +7,8 @@ const readu = read.readu;
 const readLeb = read.readLeb;
 
 // TODO: this should take in optional "post-mortem" info from a function
-pub fn disasm_block(mod: *Module, blk_off: u32) !void {
-    var level: u32 = 0;
+pub fn disasm_block(mod: *Module, blk_off: u32, in_block: bool) !void {
+    var level: u32 = 1; // non-zero in case we disasm a "end" or "else_"
 
     var fbs = mod.fbs_at(blk_off);
     const r = fbs.reader();
@@ -18,7 +18,7 @@ pub fn disasm_block(mod: *Module, blk_off: u32) !void {
         if (inst == .end or inst == .else_) level -= 1;
 
         dbg("{x:04}:", .{pos});
-        for (0..level + 1) |_| dbg("  ", .{});
+        for (0..level) |_| dbg("  ", .{});
         dbg("{s}", .{@tagName(inst)});
         switch (inst) {
             .block, .loop, .if_ => {
@@ -126,6 +126,6 @@ pub fn disasm_block(mod: *Module, blk_off: u32) !void {
         }
         dbg("\n", .{});
 
-        if (level == 0) break;
+        if (level <= @as(u32, if (in_block) 0 else 1)) break;
     }
 }

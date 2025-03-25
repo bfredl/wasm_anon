@@ -64,6 +64,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
     var cstack: std.ArrayList(struct { start: u16 }) = .init(mod.allocator);
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
+    // although having 0 as a "name" for the implicit entire-function block is useful..
     try clist.append(.{ .off = @intCast(r.context.pos), .jmp_t = 0 });
     try cstack.append(.{ .start = 0 });
 

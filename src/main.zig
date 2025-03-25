@@ -11,7 +11,8 @@ const params = clap.parseParamsComptime(
     \\-h, --help             Display this help and exit.
     \\-f, --func <str>       call function
     \\-i, --inspect          inspect imports and exports
-    \\-s, --stats            Dump some stats on exit
+    \\-s, --stats <str>      Dump some stats on exit
+    \\-d, --disasm <str>     Disassemble block
     \\--stdin <str>          override wasi stdin
     \\<str>
     \\
@@ -39,11 +40,16 @@ pub fn main() !u8 {
 
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
-    defer if (p.args.stats > 0) mod.dump_counts();
+    defer if (p.args.stats) |s| mod.dump_counts(s);
 
     if (p.args.inspect > 0) {
         try mod.dbg_imports();
         try mod.dbg_exports();
+        return 0;
+    }
+
+    if (p.args.disasm) |str| {
+        try mod.dbg_disasm(str);
         return 0;
     }
 
