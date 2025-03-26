@@ -87,7 +87,8 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 level += 1;
                 const typ = try read.blocktype(r);
                 dbg(" typ={}", .{typ});
-                if (typ != .void) return error.NotImplemented;
+                // TODO: we're fine for now but reconsider with multi-value
+                // if (typ.results() != 0) return error.NotImplemented;
                 if (inst == .if_) val_stack_level -= 1;
                 try clist.append(.{ .off = pos, .jmp_t = 0 });
                 try cstack.append(.{ .start = @intCast(clist.items.len - 1) });
@@ -192,7 +193,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 if (num != 1) return error.InvalidFormat; // possible extension
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
                 dbg(" {}", .{typ});
-                val_stack_level += 1;
+                val_stack_level -= 2;
             },
             .memory_size, .memory_grow => {
                 if (try r.readByte() != 0) return error.InvalidFormat;
@@ -225,7 +226,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: Reader, n_locals: u32) !void
                 const idx = @intFromEnum(inst);
                 // TODO: maybe just a single "adj : [265]i8" for a lot of the cases
                 if (idx >= 0x45 and idx <= 0x66) {
-                    val_stack_level -= 1;
+                    if (idx != 0x45 and idx != 0x50) val_stack_level -= 1;
                 } else if (idx >= 0x67 and idx <= 0x69) {
                     // ok, parameterless
                 } else if (idx >= 0x6a and idx <= 0x78) {
