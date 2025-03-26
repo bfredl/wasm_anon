@@ -595,11 +595,7 @@ pub fn dump_counts(self: *Module, flags: []const u8) void {
 }
 pub const disasm_block = @import("./disasm.zig").disasm_block;
 
-pub fn dbg_disasm(self: *Module, spec: []const u8) !void {
-    const brk = std.mem.indexOfScalar(u8, spec, ':');
-    const func = try std.fmt.parseInt(u32, if (brk) |b| spec[0..b] else spec, 10);
-    const blk = if (brk) |b| try std.fmt.parseInt(u32, spec[b + 1 ..], 10) else 0;
-
+pub fn dbg_disasm(self: *Module, func: u32, blk: u32) !void {
     if (func < self.n_funcs_import) {
         severe("IMPORTED :PPP\n", .{});
         return;
@@ -612,6 +608,18 @@ pub fn dbg_disasm(self: *Module, spec: []const u8) !void {
 
     if (blk >= c.len) @panic("label out of bounds");
     try self.disasm_block(c[blk].off, blk == 0);
+}
+
+pub fn dbg_compile(self: *Module, func: u32, blk: u32) !void {
+    if (func < self.n_funcs_import) {
+        severe("IMPORTED :PPP\n", .{});
+        return;
+    } else if (func >= self.n_funcs_import + self.funcs_internal.len) {
+        @panic("out of bounds!\n");
+    }
+
+    const f = &self.funcs_internal[func - self.n_funcs_import];
+    _ = try @import("./ThunderLightning.zig").compile_block(self, f, blk);
 }
 
 test "basic functionality" {

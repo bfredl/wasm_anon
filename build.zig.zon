@@ -23,6 +23,10 @@
             .url = "git+https://github.com/Hejsil/zig-clap#e47028deaefc2fb396d3d9e9f7bd776ae0b2a43a",
             .hash = "clap-0.10.0-oBajB434AQBDh-Ei3YtoKIRxZacVPF1iSwp3IX_ZB8f0",
         },
+        .forklift = .{
+            .url = "git+https://github.com/bfredl/forklift#c1bb0e633014dbbae202cbc3b4329d1afc538193",
+            .hash = "forklift-0.0.0-Dkn_kc9fAwAioaEae4ALXs-NeixqGn1d7XNkomcfaO3G",
+        },
     },
     .paths = .{
         "build.zig",

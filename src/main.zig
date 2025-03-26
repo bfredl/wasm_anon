@@ -13,10 +13,18 @@ const params = clap.parseParamsComptime(
     \\-i, --inspect          inspect imports and exports
     \\-s, --stats <str>      Dump some stats on exit
     \\-d, --disasm <str>     Disassemble block
+    \\-c, --compile <str>    Compile block using ThunderLightning
     \\--stdin <str>          override wasi stdin
     \\<str>
     \\
 );
+
+fn blkspec(spec: []const u8) !struct { u32, u32 } {
+    const brk = std.mem.indexOfScalar(u8, spec, ':');
+    const func = try std.fmt.parseInt(u32, if (brk) |b| spec[0..b] else spec, 10);
+    const blk = if (brk) |b| try std.fmt.parseInt(u32, spec[b + 1 ..], 10) else 0;
+    return .{ func, blk };
+}
 
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -49,7 +57,14 @@ pub fn main() !u8 {
     }
 
     if (p.args.disasm) |str| {
-        try mod.dbg_disasm(str);
+        const func, const blk = try blkspec(str);
+        try mod.dbg_disasm(func, blk);
+        return 0;
+    }
+
+    if (p.args.compile) |str| {
+        const func, const blk = try blkspec(str);
+        try mod.dbg_compile(func, blk);
         return 0;
     }
 

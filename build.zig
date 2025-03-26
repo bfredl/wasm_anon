@@ -9,6 +9,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/wasm_shelf.zig"),
     });
 
+    const forklift = b.dependency("forklift", .{});
+    wasm_shelf.addImport("forklift", forklift.module("forklift"));
+
     const exe = b.addExecutable(.{
         .name = "wasm_run",
         .root_source_file = b.path("src/main.zig"),
