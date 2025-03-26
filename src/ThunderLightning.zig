@@ -35,19 +35,21 @@ cfo: X86Asm,
 
 // keep track of up to two stack levels. the states are essentially
 // 0. all of stack is in stack_base[]
-// 1. top of stack is in rax
-// 2. element below top is in rax, top is either imm, R10 or a local slot
+// 1. top of stack is in virt_state[0]
+// 2. top of stack is in virt_state[1], next in virst_state[0]
+// in state 2: virt_state[0] cannot be a memory address
 
-rax_state: u8 = 0,
-virt_state: VirtState = undefined, // only used with rax_state=2
+num_tracked: u8 = 0,
+virt_state: ValueState = undefined, // only used with rax_state=2
 
 val_stack_level: u16 = 0, // wasm stack level, regardless if actually stored or not
 
-const VirtState = union(enum) {
-    // TODO: refactor .register(choice)
-    reg_2nd: void,
+const ValueState = union(enum) {
+    // only a blessed set, currently rax and r10
+    reg: IPReg,
     imm: defs.StackValue,
     local: u32,
+    on_stack: void, // a bit redudant but useful is some edge cases
 };
 
 // get_foo_bar() implies "make it so"! these might emit an instruction to
@@ -56,22 +58,46 @@ const VirtState = union(enum) {
 // if we are in state 2, transition to state 1.
 // return if rax is free to use already
 pub fn push_value_prepare(self: *ThunderLightning) !bool {
-    if (self.rax_state == 2) {
-        try self.cfo.movmr(stack_slot(self.val_stack_level - 1), .rax);
-        try switch (self.virt_state) {
-            .imm => |val| self.cfo.movri(.rax, val.i32), // TODO: types!!
-            .reg_2nd => self.cfo.mov(.rax, .r10),
-            .local => |idx| self.cfo.movrm(.rax, local_slot(idx)),
-        };
-    } else {
-        self.rax_state += 1;
+    if (self.num_tracked == 2) {
+        switch (self.virt_state[0]) {
+            .on_stack => {},
+            .reg => |reg| self.cfo.movmr(stack_slot(self.val_stack_level - 1), reg),
+            .imm => |val| self.cfo.movmi(stack_slot(self.val_stack_level - 1), val.i32),
+            .local => @panic("should not happen:p"),
+        }
+        self.virt_state[0] = self.virt_state[1];
+        self.num_tracked = 1;
+    }
+    if (self.num_tracked == 1) {
+        switch (self.virt_state[0]) {
+            .local => |idx| {
+                self.cfo.movrm(.rax, local_slot(idx));
+                self.virt_state[0] = .{.reg = .rax};
+            },
+            .reg, .imm, .local => {},
+        }
     }
     self.val_stack_level += 1;
     return self.rax_state == 1;
 }
 
-pub fn pop_as_virtual(self: *ThunderLightning) !VirtState {
+pub fn pop_as_reg_virt(self: *ThunderLightning) !struct{IPReg, ValueState} {
     self.val_stack_level -= 1;
+    if (self.num_tracked == 0 or (self.num_tracked == 1 and self.virt_state[0] == .on_stack)) {
+        self.cfo.movrm(.rax, stack_slot(self.val_stack_level)); // note: pre-adjusted
+        self.num_tracked = 1;
+        self.virt_state[0] = .{.reg = .rax};
+        return .{.rax, .{.on_stack}};
+    } else if (self.num_tracked == 1) {
+        const alt = self.virt_state[0];
+        const freereg = if (switch(alt) { .reg => |reg| reg != .rax, else => true}) .rax else .r10;
+        self.cfo.movrm(freereg, stack_slot(self.val_stack_level)); // note: pre-adjusted
+        self.virt_state[0] = .{.reg = freereg};
+        return .{freereg, alt};
+    } else {
+        const freereg = if (switch(alt) { .reg => |reg| reg != .rax, else => true}) .rax else .r10;
+    }
+
     if (self.rax_state != 2) return error.NotImplemented;
     self.rax_state = 1;
     return self.virt_state;
@@ -111,24 +137,17 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
         switch (inst) {
             .local_get => {
                 const idx = try readu(r);
-                if (try self.push_value_prepare()) {
-                    // TODO: use eax for 32-bit locals to not get junk
-                    try cfo.movrm(.rax, local_slot(idx));
-                } else {
-                    self.virt_state = .{ .local = idx };
-                }
+                const slot = try self.push_value_prepare();
+                self.virt_state[slot] = .{ .local = idx };
             },
             .i32_const => {
                 const val = try readLeb(r, i32);
-                if (try self.push_value_prepare()) {
-                    // TODO: use eax for 32-bit locals to not get junk
-                    try cfo.movri(.rax, val);
-                } else {
-                    self.virt_state = .{ .imm = .{ .i32 = val } };
-                }
+                const slot = try self.push_value_prepare();
+                self.virt_state = .{ .imm = .{ .i32 = val } };
             },
             .i32_add => {
-                try switch (try self.pop_as_virtual()) {
+                const dst, const src = self.pop_as_reg_virt();
+                try switch (try ) {
                     .imm => |val| cfo.aritri(.add, .rax, val.i32),
                     .reg_2nd => cfo.arit(.add, .rax, .r10),
                     .local => |idx| cfo.aritrm(.add, .rax, local_slot(idx)),
