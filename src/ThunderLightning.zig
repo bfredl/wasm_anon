@@ -3,9 +3,7 @@ const Function = @import("./Function.zig");
 const defs = @import("./defs.zig");
 const dbg = std.debug.print;
 const std = @import("std");
-const read = @import("./read.zig");
-const readu = read.readu;
-const readLeb = read.readLeb;
+const Reader = @import("./Reader.zig");
 
 const forklift = @import("forklift");
 const X86Asm = forklift.X86Asm;
@@ -182,11 +180,10 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
     var self: ThunderLightning = .{ .cfo = X86Asm{ .code = &code, .long_jump_mode = true } };
     const cfo = &self.cfo;
 
-    var fbs = mod.fbs_at(blk_off);
-    const r = fbs.reader();
+    var r = mod.reader_at(blk_off);
 
     if ((try r.readByte()) != @intFromEnum(defs.OpCode.loop)) return error.NotImplemented;
-    const top_args, const top_ret = try (try read.blocktype(r)).arity(mod);
+    const top_args, const top_ret = try (try r.blocktype()).arity(mod);
     if (top_args != 0 or top_ret != 0) return error.NotImplemented;
 
     // TODO: control should know the start level
@@ -197,7 +194,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
     errdefer cfo.dbg_nasm(mod.allocator) catch unreachable;
 
     while (true) {
-        const pos: u32 = @intCast(r.context.pos);
+        const pos = r.pos;
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
 
@@ -206,17 +203,17 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
         dbg("[{} {}] {s}\n", .{ self.val_stack_level, self.num_tracked, @tagName(inst) });
         switch (inst) {
             .local_get => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 const slot = try self.push_value_prepare();
                 self.virt_state[slot] = .{ .local = idx };
             },
             .i32_const => {
-                const val = try readLeb(r, i32);
+                const val = try r.readLeb(i32);
                 const slot = try self.push_value_prepare();
                 self.virt_state[slot] = .{ .imm = .{ .i32 = val } };
             },
             .local_set, .local_tee => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 // TODO: top_as_regimm??
                 const src = try if (inst == .local_tee) self.top_as_reg() else self.pop_as_reg();
                 try cfo.movmr(local_slot(idx), src);
@@ -232,17 +229,17 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
             },
             .i64_load => {
                 const dst = try self.top_as_reg();
-                const alignas = try readu(r);
+                const alignas = try r.readu();
                 _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                const offset = try readu(r);
+                const offset = try r.readu();
                 // TODO: baaaunds checking
                 try cfo.movrm(dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)));
             },
             .i64_store => {
                 const dst, const src = try self.pop2_as_reg_regimm();
-                const alignas = try readu(r);
+                const alignas = try r.readu();
                 _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                const offset = try readu(r);
+                const offset = try r.readu();
                 // TODO: refactor forklift to use .decl constructors for EAddr!
                 const dstaddr = X86Asm.bi(mem_start, dst).o(@intCast(offset));
                 try switch (src) {

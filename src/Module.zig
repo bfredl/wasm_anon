@@ -15,22 +15,9 @@ const Module = @This();
 
 const ImportTable = @import("./ImportTable.zig");
 
-const read = @import("./read.zig");
-const readu = read.readu;
-const readName = read.readName;
-const Reader = read.Reader;
-const Limits = struct { min: u32, max: ?u32 };
+pub const Limits = struct { min: u32, max: ?u32 };
 
-fn readLimits(r: Reader) !Limits {
-    const kind = try r.readByte();
-    const min = try readu(r);
-    return .{ .min = min, .max = switch (kind) {
-        0x00 => null,
-        0x01 => try readu(r),
-        else => return error.InvalidFormat,
-    } };
-}
-
+const Reader = @import("./Reader.zig");
 allocator: std.mem.Allocator,
 raw: []const u8,
 n_funcs_import: u32 = 0,
@@ -65,7 +52,7 @@ istat: [256]u32 = @splat(0),
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
 
-pub fn fbs_at(self: Module, off: u32) std.io.FixedBufferStream([]const u8) {
+pub fn reader_at(self: Module, off: u32) Reader {
     return .{ .buffer = self.raw, .pos = off };
 }
 
@@ -75,8 +62,8 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
 
     var self: Module = .{ .raw = module, .allocator = allocator };
 
-    var fbs = std.io.FixedBufferStream([]const u8){ .pos = 8, .buffer = module };
-    const r = fbs.reader();
+    var r0 = self.reader_at(8);
+    const r = &r0; // DO YOU LIKE MY SILLY HAT?
 
     while (true) {
         const id = r.readByte() catch |err| switch (err) {
@@ -85,22 +72,22 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         };
         const kind: defs.SectionKind = @enumFromInt(id);
 
-        const pos = fbs.pos;
-        const len = try readu(r);
+        const pos = r.pos;
+        const len = try r.readu();
         dbg("SECTION: {s} ({}) at {} with len {}\n", .{ @tagName(kind), id, pos, len });
-        const end_pos = fbs.pos + len;
+        const end_pos = r.pos + len;
         switch (kind) {
             .type => try self.type_section(r),
             .function => try self.function_section(r),
             .memory => try self.memory_section(r),
             .global => try self.global_section(r),
             .import => try self.import_section(r),
-            .export_ => self.export_off = @intCast(fbs.pos),
+            .export_ => self.export_off = r.pos,
 
             .code => try self.code_section(r),
-            .table => self.table_off = @intCast(fbs.pos),
-            .element => self.element_off = @intCast(fbs.pos),
-            .data => self.data_off = @intCast(fbs.pos),
+            .table => self.table_off = r.pos,
+            .element => self.element_off = r.pos,
+            .data => self.data_off = r.pos,
             .custom => try self.custom_section(r, len),
             .start => return error.NotImplemented,
             else => {
@@ -109,10 +96,10 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         }
 
         // TODO: this should be strict, but we are just fucking around and finding out for now
-        if (fbs.pos > end_pos) {
+        if (r.pos > end_pos) {
             return error.InvalidFormat;
         }
-        fbs.pos = end_pos;
+        r.pos = end_pos;
     }
 
     return self;
@@ -126,22 +113,22 @@ pub fn deinit(self: *Module) void {
     }
 }
 
-pub fn type_section(self: *Module, r: Reader) !void {
-    const len = try readu(r);
+pub fn type_section(self: *Module, r: *Reader) !void {
+    const len = try r.readu();
     dbg("TYPES: {}\n", .{len});
     self.types = try self.allocator.alloc(u32, len);
     for (0..len) |i| {
-        self.types[i] = @intCast(r.context.pos);
+        self.types[i] = r.pos;
         const tag = try r.readByte();
         if (tag != 0x60) return error.InvalidFormat;
-        const n_params = try readu(r);
+        const n_params = try r.readu();
         dbg("(", .{});
         for (0..n_params) |_| {
             const typ: defs.ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
         }
         dbg("): (", .{});
-        const n_res = try readu(r);
+        const n_res = try r.readu();
         for (0..n_res) |_| {
             const typ: defs.ValType = @enumFromInt(try r.readByte());
             dbg("{s}, ", .{@tagName(typ)});
@@ -152,11 +139,10 @@ pub fn type_section(self: *Module, r: Reader) !void {
 
 pub fn dbg_type(self: *Module, typeidx: u32) !void {
     if (self.types.len <= typeidx) return severe("[OUT OF BOUNDS]", .{});
-    var fbs = self.fbs_at(self.types[typeidx]);
-    const r = fbs.reader();
+    var r = self.reader_at(self.types[typeidx]);
     const tag = try r.readByte();
     if (tag != 0x60) return error.InvalidFormat;
-    const n_params = try readu(r);
+    const n_params = try r.readu();
     severe("[", .{});
     for (0..n_params) |i| {
         if (i > 0) severe(", ", .{});
@@ -164,7 +150,7 @@ pub fn dbg_type(self: *Module, typeidx: u32) !void {
         severe("{s}", .{@tagName(typ)});
     }
     severe("] => [", .{});
-    const n_res = try readu(r);
+    const n_res = try r.readu();
     for (0..n_res) |i| {
         if (i > 0) severe(", ", .{});
         const typ: defs.ValType = @enumFromInt(try r.readByte());
@@ -174,30 +160,30 @@ pub fn dbg_type(self: *Module, typeidx: u32) !void {
 }
 
 // currently we two-cycle the import section to first get the counts
-pub fn import_section(self: *Module, r: Reader) !void {
-    self.imports_off = @intCast(r.context.pos);
-    const len = try readu(r);
+pub fn import_section(self: *Module, r: *Reader) !void {
+    self.imports_off = r.pos;
+    const len = try r.readu();
     dbg("IMPORTS: {}\n", .{len});
     self.n_imports = len;
     // greedy: assume most imports are functions
     var func_types: std.ArrayList(u32) = try .initCapacity(self.allocator, len);
     errdefer func_types.deinit();
     for (0..len) |_| {
-        _ = try readName(r);
-        _ = try readName(r);
+        _ = try r.readName();
+        _ = try r.readName();
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         switch (kind) {
             .func => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 try func_types.append(idx);
                 self.n_funcs_import += 1;
             },
             .table => {
                 _ = try r.readByte();
-                _ = try readLimits(r);
+                _ = try r.readLimits();
             },
             .mem => {
-                _ = try readLimits(r);
+                _ = try r.readLimits();
             },
             .global => {
                 _ = try r.readByte();
@@ -212,28 +198,27 @@ pub fn import_section(self: *Module, r: Reader) !void {
 }
 
 pub fn dbg_imports(self: *Module) !void {
-    var fbs = self.fbs_at(self.imports_off);
-    const r = fbs.reader();
-    const len = try readu(r);
+    var r = self.reader_at(self.imports_off);
+    const len = try r.readu();
 
     for (0..len) |_| {
-        const mod = try readName(r);
-        const name = try readName(r);
+        const mod = try r.readName();
+        const name = try r.readName();
         severe("{s}:{s} = ", .{ mod, name });
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         switch (kind) {
             .func => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 severe("func ", .{});
                 try self.dbg_type(idx);
             },
             .table => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
-                const limits = try readLimits(r);
+                const limits = try r.readLimits();
                 severe("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
             },
             .mem => {
-                const limits = try readLimits(r);
+                const limits = try r.readLimits();
                 severe("mem w {}:{?}\n", .{ limits.min, limits.max });
             },
             .global => {
@@ -246,14 +231,13 @@ pub fn dbg_imports(self: *Module) !void {
 }
 
 pub fn dbg_exports(self: *Module) !void {
-    var fbs = self.fbs_at(self.export_off);
-    const r = fbs.reader();
-    const len = try readu(r);
+    var r = self.reader_at(self.export_off);
+    const len = try r.readu();
     severe("EXPORTS: {}\n", .{len});
     for (0..len) |_| {
-        const name = try readName(r);
+        const name = try r.readName();
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
-        const idx = try readu(r);
+        const idx = try r.readu();
         severe("{s} = {s} {} ", .{ name, @tagName(kind), idx });
         if (kind == .func) {
             // TODO: reexport of imports allowed??
@@ -267,14 +251,13 @@ pub const Export = struct { kind: defs.ImportExportKind, idx: u32 };
 
 pub fn lookup_export(self: *Module, name: []const u8) !?Export {
     if (self.export_off == 0) return null;
-    var fbs = self.fbs_at(self.export_off);
-    const r = fbs.reader();
+    var r = self.reader_at(self.export_off);
 
-    const len = try readu(r);
+    const len = try r.readu();
     for (0..len) |_| {
-        const item_name = try readName(r);
+        const item_name = try r.readName();
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
-        const idx = try readu(r);
+        const idx = try r.readu();
         if (std.mem.eql(u8, name, item_name)) {
             return .{ .kind = kind, .idx = idx };
         }
@@ -282,22 +265,22 @@ pub fn lookup_export(self: *Module, name: []const u8) !?Export {
     return null;
 }
 
-fn function_section(self: *Module, r: Reader) !void {
-    const len = try readu(r);
+fn function_section(self: *Module, r: *Reader) !void {
+    const len = try r.readu();
     if (len > 0) self.funcs_internal = try self.allocator.alloc(Function, len);
     dbg("FUNCS: {}\n", .{len});
     for (0..len) |i| {
-        const idx = try readu(r);
+        const idx = try r.readu();
         self.funcs_internal[i] = .{ .typeidx = idx };
     }
     dbg("...\n", .{});
 }
 
-pub fn memory_section(self: *Module, r: Reader) !void {
-    const len = try readu(r);
+pub fn memory_section(self: *Module, r: *Reader) !void {
+    const len = try r.readu();
     dbg("MEMORYS: {}\n", .{len});
     for (0..len) |i| {
-        const lim = try readLimits(r);
+        const lim = try r.readLimits();
         dbg("mem {}:{?}\n", .{ lim.min, lim.max });
         if (i == 0) {
             self.mem_limits = lim;
@@ -310,53 +293,51 @@ pub fn memory_section(self: *Module, r: Reader) !void {
 pub fn init_data(self: *Module, mem: []u8, preglobals: []const defs.StackValue) !void {
     if (self.data_off == 0) return;
 
-    var fbs = self.fbs_at(self.data_off);
-    const r = fbs.reader();
+    var r = self.reader_at(self.data_off);
 
-    const len = try readu(r);
+    const len = try r.readu();
     dbg("DATAS: {}\n", .{len});
     for (0..len) |_| {
-        const typ = try readu(r);
+        const typ = try r.readu();
         dbg("TYP: {}\n", .{typ});
 
         if (typ > 2 or typ == 1) return error.NotImplemented;
-        const memidx = if (typ == 0) 0 else try readu(r);
+        const memidx = if (typ == 0) 0 else try r.readu();
         if (memidx > 0) return error.NotImplemented;
 
-        const offset: usize = @intCast((try Interpreter.eval_constant_expr(r, .i32, preglobals)).i32);
-        const lenna = try readu(r);
+        const offset: usize = @intCast((try Interpreter.eval_constant_expr(&r, .i32, preglobals)).i32);
+        const lenna = try r.readu();
         dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
 
         if (offset + lenna > mem.len) return error.WASMTrap;
-        try r.readNoEof(mem[offset..][0..lenna]);
+        @memcpy(mem[offset..][0..lenna], try r.readBytes(lenna));
     }
 }
 
-pub fn global_section(self: *Module, r: Reader) !void {
-    const len = try readu(r);
+pub fn global_section(self: *Module, r: *Reader) !void {
+    const len = try r.readu();
     dbg("GLOBALS: {}\n", .{len});
     self.n_globals_internal = len;
-    self.globals_off = @intCast(r.context.pos);
+    self.globals_off = r.pos;
 }
 
 const Instance = @import("./Instance.zig");
 pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void {
-    var fbs = self.fbs_at(self.imports_off);
-    const r = fbs.reader();
-    const len = try readu(r);
+    var r = self.reader_at(self.imports_off);
+    const len = try r.readu();
 
     var func_counter: u32 = 0;
     var global_counter: u32 = 0;
 
     for (0..len) |_| {
-        const mod = try readName(r);
-        const name = try readName(r);
+        const mod = try r.readName();
+        const name = try r.readName();
         dbg("{s}:{s} = \n", .{ mod, name });
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         const imp = imports orelse return error.InvalidArgument;
         switch (kind) {
             .func => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 const item = imp.funcs.get(name) orelse return error.MissingImport;
                 const n_args, const n_res = try self.type_arity(idx);
                 if (n_args != item.n_args or n_res != item.n_res) return error.ImportTypeMismatch;
@@ -365,7 +346,7 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
             },
             .table => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
-                const limits = try readLimits(r);
+                const limits = try r.readLimits();
                 if (typ == .funcref) {
                     if (imp.func_table_size < limits.min) return error.ImportLimitsMismatch;
                     if (limits.max) |m| if (imp.func_table_size > m) return error.ImportLimitsMismatch;
@@ -375,7 +356,7 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
             .mem => {
                 // TODO: we don't really support memory shared between instances.
                 // an imported memory just works like a private one
-                const limits = try readLimits(r);
+                const limits = try r.readLimits();
                 if (imp.memory_size < limits.min) return error.ImportLimitsMismatch;
                 if (limits.max) |m| if (imp.memory_size > m) return error.ImportLimitsMismatch;
                 try in.init_memory(imp.memory_size);
@@ -393,36 +374,34 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
         }
     }
 
-    r.context.pos = self.globals_off;
+    r.pos = self.globals_off;
     for (0..self.n_globals_internal) |i| {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
-        in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(r, typ, in.preglobals());
+        in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(&r, typ, in.preglobals());
     }
 }
 
 pub fn type_arity(self: *const Module, type_idx: u32) !struct { u16, u16 } {
-    var fbs_type = self.fbs_at(self.types[type_idx]);
-    const r_type = fbs_type.reader();
-    const tag = try r_type.readByte();
+    var r = self.reader_at(self.types[type_idx]);
+    const tag = try r.readByte();
     if (tag != 0x60) return error.InvalidFormat;
-    const n_params: u16 = @intCast(try readu(r_type));
+    const n_params: u16 = @intCast(try r.readu());
     for (0..n_params) |_| {
-        _ = try r_type.readByte(); // TEMP hack: while we don't validate runtime args
+        _ = try r.readByte(); // TEMP hack: while we don't validate runtime args
     }
-    const n_res: u16 = @intCast(try readu(r_type));
+    const n_res: u16 = @intCast(try r.readu());
     return .{ n_params, n_res };
 }
 
 pub fn table_section(self: *Module, in: *Instance) !void {
-    var fbs = self.fbs_at(self.table_off);
-    const r = fbs.reader();
-    const len = try readu(r);
+    var r = self.reader_at(self.table_off);
+    const len = try r.readu();
     dbg("Tables: {}\n", .{len});
     for (0..len) |_| {
         const typ: defs.ValType = @enumFromInt(try r.readByte());
-        const limits = try readLimits(r);
+        const limits = try r.readLimits();
         dbg("table {s} w {}:{?}\n", .{ @tagName(typ), limits.min, limits.max });
         if (typ == .funcref) {
             try in.init_func_table(limits.min);
@@ -431,20 +410,19 @@ pub fn table_section(self: *Module, in: *Instance) !void {
 }
 
 pub fn element_section(self: *Module, in: *Instance) !void {
-    var fbs = self.fbs_at(self.element_off);
-    const r = fbs.reader();
-    const len = try readu(r);
+    var r = self.reader_at(self.element_off);
+    const len = try r.readu();
     dbg("Elements: {}\n", .{len});
     for (0..len) |_| {
-        const kinda = try readu(r);
+        const kinda = try r.readu();
         if (kinda == 0) {
-            const offset: usize = @intCast((try Interpreter.eval_constant_expr(r, .i32, in.preglobals())).i32);
-            const elen = try readu(r);
+            const offset: usize = @intCast((try Interpreter.eval_constant_expr(&r, .i32, in.preglobals())).i32);
+            const elen = try r.readu();
             if (offset + len > in.funcref_table.len) {
                 return error.InvalidFormat;
             }
             for (0..elen) |i| {
-                const item = try readu(r);
+                const item = try r.readu();
                 if (item >= self.funcs_internal.len + self.n_funcs_import) return error.InvalidFormat;
                 in.funcref_table[offset + i] = item;
             }
@@ -455,39 +433,39 @@ pub fn element_section(self: *Module, in: *Instance) !void {
     }
 }
 
-pub fn code_section(self: *Module, r: Reader) !void {
-    const len = try readu(r);
+pub fn code_section(self: *Module, r: *Reader) !void {
+    const len = try r.readu();
     dbg("Codes: {}\n", .{len});
     for (0..len) |i| {
-        const size = try readu(r);
+        const size = try r.readu();
         dbg("CODE with size {}\n", .{size});
-        const endpos = r.context.pos + size;
-        self.funcs_internal[i].codeoff = @intCast(r.context.pos);
+        const endpos = r.pos + size;
+        self.funcs_internal[i].codeoff = r.pos;
 
         // if(force_eager)
         // try self.funcs[i].parse(self, r);
 
-        r.context.pos = endpos;
+        r.pos = endpos;
         dbg("\n", .{});
     }
 }
 
-pub fn custom_section(self: *Module, r: Reader, sec_len: usize) !void {
-    const end_pos = r.context.pos + sec_len;
-    const name = try readName(r);
+pub fn custom_section(self: *Module, r: *Reader, sec_len: u32) !void {
+    const end_pos = r.pos + sec_len;
+    const name = try r.readName();
     dbg("CUSTOM: {s} as {}\n", .{ name, sec_len });
     if (std.mem.eql(u8, name, "name")) {
         // LAYERING! they could just have used separate custom sections like
         // name.function and so on but that would have been too simple.
-        while (r.context.pos < end_pos) {
+        while (r.pos < end_pos) {
             const kinda = try r.readByte();
-            const size = try readu(r);
+            const size = try r.readu();
 
             if (kinda == 1 and self.funcs_internal.len > 0) { // function names, woho!
-                const map_len = try readu(r);
+                const map_len = try r.readu();
                 for (0..map_len) |_| {
-                    const idx = try readu(r);
-                    const funcname = try readName(r);
+                    const idx = try r.readu();
+                    const funcname = try r.readName();
                     // dbg("waa {} is {s}\n", .{ idx, funcname });
                     if (idx >= self.n_funcs_import) {
                         const internal_idx = idx - self.n_funcs_import;
@@ -498,12 +476,12 @@ pub fn custom_section(self: *Module, r: Reader, sec_len: usize) !void {
                 }
             } else {
                 dbg("NAMM {} w size {}\n", .{ kinda, size });
-                r.context.pos = @min(end_pos, r.context.pos + size);
+                r.pos = @min(end_pos, r.pos + size);
             }
         }
     } else if (std.mem.eql(u8, name, "dylink.0")) {
-        self.custom_dylink0_off = @intCast(r.context.pos);
-        self.custom_dylink0_end = @intCast(end_pos);
+        self.custom_dylink0_off = r.pos;
+        self.custom_dylink0_end = end_pos;
     }
 }
 
@@ -516,16 +494,15 @@ pub const DylinkInfo = struct {
 
 pub fn get_dylink_info(self: *Module) !?DylinkInfo {
     if (self.custom_dylink0_off == 0) return null;
-    var fbs = self.fbs_at(self.custom_dylink0_off);
-    const r = fbs.reader();
-    while (r.context.pos < self.custom_dylink0_end) {
+    var r = self.reader_at(self.custom_dylink0_off);
+    while (r.pos < self.custom_dylink0_end) {
         const kinda = try r.readByte();
-        const size = try readu(r);
+        const size = try r.readu();
         if (kinda == 1) { // WASM_DYLINK_MEMORY_INFO
-            const memory_size = try readu(r);
-            const memory_align = try readu(r);
-            const table_size = try readu(r);
-            const table_align = try readu(r);
+            const memory_size = try r.readu();
+            const memory_align = try r.readu();
+            const table_size = try r.readu();
+            const table_align = try r.readu();
             return .{
                 .memory_size = memory_size,
                 .memory_align = memory_align,
@@ -533,7 +510,7 @@ pub fn get_dylink_info(self: *Module) !?DylinkInfo {
                 .table_align = table_align,
             };
         } else {
-            r.context.pos += size;
+            r.pos += size;
         }
     }
     return null;

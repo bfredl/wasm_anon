@@ -8,10 +8,7 @@ const severe = std.debug.print;
 const dbg = Module.nodbg;
 const ControlItem = Function.ControlItem;
 
-const read = @import("./read.zig");
-const readLeb = read.readLeb;
-const readu = read.readu;
-const Reader = read.Reader;
+const Reader = @import("./Reader.zig");
 const Interpreter = @This();
 
 fn u(val: i32) u32 {
@@ -132,10 +129,10 @@ pub fn local(self: *Interpreter, idx: u32) *StackValue {
     return &self.values.items[self.locals_ptr + idx];
 }
 
-pub fn init_locals(stack: *Interpreter, r: Reader) !void {
-    const n_local_defs = try readu(r);
+pub fn init_locals(stack: *Interpreter, r: *Reader) !void {
+    const n_local_defs = try r.readu();
     for (0..n_local_defs) |_| {
-        const n_decl = try readu(r);
+        const n_decl = try r.readu();
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         const init_val: StackValue = StackValue.default(typ) orelse return error.InvalidFormat;
         for (0..n_decl) |_| try stack.push(init_val);
@@ -155,24 +152,23 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     if (params.len != self.n_params or ret.len < self.n_res) return error.InvalidArgument;
     try stack.push_multiple(params);
     // fbs.pos is the insruction pointer which is a bit weird but works
-    var fbs = mod.fbs_at(self.codeoff);
-    const r = fbs.reader();
+    var r = mod.reader_at(self.codeoff);
 
-    try stack.init_locals(r);
+    try stack.init_locals(&r);
     stack.enter_frame();
     // entire body is implicitly a block, producing the return values
     try stack.push_label(@intCast(control.len - 1), @intCast(self.n_res));
     stack.func = self;
 
     errdefer if (logga) stack.showstack();
-    try stack.run_vm(in, r);
+    try stack.run_vm(in, &r);
     if (stack.nvals() < self.n_res) return error.RuntimeError;
 
     @memcpy(ret[0..self.n_res], stack.values.items[stack.values.items.len - self.n_res ..]);
     return self.n_res;
 }
 
-fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
+fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
     var c_ip: u32 = 0;
     var control = stack.func.control.?;
     const mod = in.mod;
@@ -184,15 +180,15 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     const do_locals_opt = true;
 
     while (true) {
-        while (do_locals_opt and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_get)) {
-            r.context.pos += 1;
-            const idx = try readu(r);
+        while (do_locals_opt and r.buffer[r.pos] == @intFromEnum(defs.OpCode.local_get)) {
+            r.pos += 1;
+            const idx = try r.readu();
             const val = stack.local(idx).*;
             stack.pushc(val);
             mod.istat[@intFromEnum(defs.OpCode.local_get)] +|= 1;
         }
 
-        const pos: u32 = @intCast(r.context.pos);
+        const pos: u32 = r.pos;
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         dbg("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, stack.values.items.len, stack.labels.items.len });
         var label_target: ?u32 = null;
@@ -207,7 +203,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .select, .select_t => {
                 if (inst == .select_t) {
-                    const num = try readu(r);
+                    const num = try r.readu();
                     if (num != 1) return error.InvalidFormat; // possible extension
                     const typ: defs.ValType = @enumFromInt(try r.readByte());
                     _ = typ;
@@ -217,19 +213,19 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 if (pred.i32 == 0) val1.* = val2;
             },
             .i32_const => {
-                const val = try readLeb(r, i32);
+                const val = try r.readLeb(i32);
                 stack.pushc(.{ .i32 = val });
             },
             .i64_const => {
-                const val = try readLeb(r, i64);
+                const val = try r.readLeb(i64);
                 stack.pushc(.{ .i64 = val });
             },
             .f32_const => {
-                const val = try read.readf(r, f32);
+                const val = try r.readf(f32);
                 stack.pushc(.{ .f32 = val });
             },
             .f64_const => {
-                const val = try read.readf(r, f64);
+                const val = try r.readf(f64);
                 stack.pushc(.{ .f64 = val });
             },
             .i32_eqz => {
@@ -241,7 +237,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 dst.i32 = if (dst.i64 == 0) 1 else 0;
             },
             .local_get => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 // TODO: they dun guufed value semantics if this was inline
                 // or even `const val = stack.local(idx).*;`
                 //
@@ -251,21 +247,21 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 stack.pushc(val);
             },
             .local_set => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 const val = try stack.pop();
                 stack.local(idx).* = val;
             },
             .local_tee => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 const val = try stack.top();
                 stack.local(idx).* = val.*;
             },
             .global_get => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 stack.pushc(in.get_global(idx).*);
             },
             .global_set => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 const val = try stack.pop();
                 in.get_global(idx).* = val;
             },
@@ -284,7 +280,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .loop => {
                 c_ip += 1;
-                const typ = try read.blocktype(r);
+                const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(mod);
                 _ = n_results;
                 // target: right after "loop"
@@ -292,10 +288,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 control[c_ip].count +|= 1;
             },
             .br => {
-                label_target = try readu(r);
+                label_target = try r.readu();
             },
             .br_if => {
-                const idx = try readu(r);
+                const idx = try r.readu();
                 if (idx + 1 > stack.labels.items.len) return error.RuntimeError;
                 const val = try stack.pop();
                 if (val.i32 != 0) {
@@ -304,18 +300,18 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .br_table => {
                 const val = try stack.pop();
-                const n = try readu(r);
+                const n = try r.readu();
                 var target: ?u32 = null;
                 for (0..n) |i| {
-                    const ival = try readu(r);
+                    const ival = try r.readu();
                     if (val.i32 == i) target = ival;
                 }
-                const default = try readu(r);
+                const default = try r.readu();
                 label_target = target orelse default;
             },
             .block => {
                 c_ip += 1;
-                const typ = try read.blocktype(r);
+                const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(mod);
                 if (n_args > 0) return error.NotImplemented;
                 // target: right after "loop"
@@ -324,7 +320,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .if_ => {
                 c_ip += 1;
-                const typ = try read.blocktype(r);
+                const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(mod);
                 if (n_args > 0) return error.NotImplemented;
                 if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
@@ -333,7 +329,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                     try stack.push_label(control[c_ip].jmp_t, n_results); // we worry about else vs end when we get there..
                 } else {
                     c_ip = control[c_ip].jmp_t;
-                    r.context.pos = control[c_ip].off;
+                    r.pos = control[c_ip].off;
                     const c_inst: defs.OpCode = @enumFromInt(try r.readByte());
                     if (c_inst == .else_) {
                         try stack.push_label(control[c_ip].jmp_t, n_results);
@@ -349,7 +345,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 // we can only reach/jump to else from inside the "then" block. time to exit!
                 c_ip = control[c_ip].jmp_t;
                 // execute the end inline
-                r.context.pos = control[c_ip].off + 1;
+                r.pos = control[c_ip].off + 1;
                 // TODO: MYSKO
                 _ = stack.labels.pop() orelse break;
             },
@@ -359,15 +355,15 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
             },
             .call, .call_indirect => {
                 const idx, const chktyp = if (inst == .call_indirect) funcidx: {
-                    const typidx = try readLeb(r, u32);
-                    const tblidx = try readLeb(r, u32);
+                    const typidx = try r.readu();
+                    const tblidx = try r.readu();
                     if (tblidx > 0) return error.NotImplemented; // clown face emoji
                     const eidx: u32 = @bitCast((try stack.pop()).i32);
                     if (eidx >= in.funcref_table.len) return error.WASMTrap;
                     const funcidx = in.funcref_table[eidx];
                     if (funcidx == defs.funcref_nil) return error.WASMTrap;
                     break :funcidx .{ funcidx, typidx };
-                } else .{ try readLeb(r, u32), null };
+                } else .{ try r.readu(), null };
 
                 const extra = idx & (1 << 31) != 0;
                 const lowidx = idx & ~@as(u32, 1 << 31);
@@ -414,11 +410,11 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
 
                     // save current state as a frame
                     // note: calls don't increment c_ip. If they were changed to do, r_ip would be redundant
-                    try stack.push_frame(@intCast(r.context.pos), c_ip, stack.func);
+                    try stack.push_frame(r.pos, c_ip, stack.func);
 
                     // enter new function
                     stack.locals_ptr = @intCast(stack.values.items.len - called.n_params);
-                    r.context.pos = called.codeoff;
+                    r.pos = called.codeoff;
                     try init_locals(stack, r);
                     stack.func = called;
                     control = called_control;
@@ -454,7 +450,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                         stack.frame_label = f.frame_label;
 
                         c_ip = f.c_ip;
-                        r.context.pos = f.r_ip;
+                        r.pos = f.r_ip;
                     } else {
                         // top-level invoked function
                         return;
@@ -466,7 +462,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                 // if (stack.nvals() != self.n_res) return error.RuntimeError;
             },
             .prefixed => {
-                const code: defs.Prefixed = try read.prefix(r);
+                const code: defs.Prefixed = try r.prefix();
                 switch (code) {
                     .memory_fill => {
                         if (try r.readByte() != 0) return error.InvalidFormat;
@@ -555,9 +551,9 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                         dst.* = try @field(ops.convert, name)(dst.*);
                     },
                     .load => {
-                        const alignas = try readu(r);
+                        const alignas = try r.readu();
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                        const offset = try readu(r);
+                        const offset = try r.readu();
                         const dst = try stack.top();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
                         const memtype = defs.memtype(tag);
@@ -567,9 +563,9 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
                         @field(dst, name[0..3]) = foo;
                     },
                     .store => {
-                        const alignas = try readu(r);
+                        const alignas = try r.readu();
                         _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                        const offset = try readu(r);
+                        const offset = try r.readu();
                         const val = try stack.pop();
                         const dst = try stack.pop();
                         const ea = @as(u32, @bitCast(dst.i32)) + offset;
@@ -592,22 +588,22 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
 
         if (label_target) |idx| {
             c_ip = try stack.pop_and_jump_labels(idx);
-            r.context.pos = control[c_ip].off;
+            r.pos = control[c_ip].off;
 
             // we don't want to rexec the loop header. however execute the "end"
             // target to clean-up the stack.
-            if (r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.loop)) {
+            if (r.buffer[r.pos] == @intFromEnum(defs.OpCode.loop)) {
                 control[c_ip].count +|= 1;
-                r.context.pos += 1;
-                _ = try read.blocktype(r);
+                r.pos += 1;
+                _ = try r.blocktype();
             } else {
                 c_ip -= 1; // messy!
             }
         } else {
-            if (do_locals_opt and r.context.buffer[r.context.pos] == @intFromEnum(defs.OpCode.local_set)) {
-                r.context.pos += 1;
+            if (do_locals_opt and r.buffer[r.pos] == @intFromEnum(defs.OpCode.local_set)) {
+                r.pos += 1;
                 const val = try stack.pop();
-                const idx = try readu(r);
+                const idx = try r.readu();
                 stack.local(idx).* = val;
                 mod.istat[@intFromEnum(defs.OpCode.local_set)] +|= 1;
                 continue;
@@ -619,22 +615,22 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: Reader) !void {
     }
 }
 
-pub fn eval_constant_expr(r: Reader, typ: defs.ValType, preglobals: []const StackValue) !StackValue {
+pub fn eval_constant_expr(r: *Reader, typ: defs.ValType, preglobals: []const StackValue) !StackValue {
     // shortcut: `expr` is just "i??.const VAL end"
     const eval = try r.readByte();
     const init_typ: defs.OpCode = @enumFromInt(eval);
     _ = typ;
     const val: StackValue = val: switch (init_typ) {
-        .i32_const => .{ .i32 = try read.readLeb(r, i32) },
-        .i64_const => .{ .i64 = try read.readLeb(r, i64) },
-        .f32_const => .{ .f32 = try read.readf(r, f32) },
-        .f64_const => .{ .f64 = try read.readf(r, f64) },
+        .i32_const => .{ .i32 = try r.readLeb(i32) },
+        .i64_const => .{ .i64 = try r.readLeb(i64) },
+        .f32_const => .{ .f32 = try r.readf(f32) },
+        .f64_const => .{ .f64 = try r.readf(f64) },
         .ref_null => {
             _ = try r.readByte();
             break :val .{ .ref = 0 };
         },
         .global_get => {
-            const idx = try readu(r);
+            const idx = try r.readu();
             if (idx >= preglobals.len) return error.InvalidFormat;
             break :val preglobals[idx].indir.*;
         },
