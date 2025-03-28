@@ -12,6 +12,8 @@ compiled_func: BlockFunc = undefined,
 
 call_count: Counter = 0,
 
+n_locals: u32 = 0,
+
 // need not be strict but can be an over-estimate
 val_stack_max_height: u16 = 0,
 const Counter = u64;
@@ -55,6 +57,7 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
         dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
     dbg("\n", .{});
+    self.n_locals = n_locals;
 
     try self.parse_body(mod, r, n_locals);
 }

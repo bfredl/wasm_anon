@@ -144,7 +144,7 @@ fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void
     const arg = args_ret[0].u32();
     dbg("wasi exit: {}\n", .{arg});
 
-    // std.posix.exit(0); // for benchmarking which expect 0 ret..
+    std.posix.exit(0); // for benchmarking which expect 0 ret..
     state.exit_status = arg;
     return error.WASMTrap;
 }

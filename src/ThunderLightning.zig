@@ -101,7 +101,7 @@ pub fn pop_as_reg_virt(self: *ThunderLightning) !struct { IPReg, ValueState } {
             .reg => |reg| reg != .rax,
             else => true,
         }) .rax else .r10;
-        try self.cfo.movrm(fakew, freereg, stack_slot(self.val_stack_level)); // note: pre-adjusted
+        try self.cfo.movrm(fakew, freereg, stack_slot(self.val_stack_level - 1));
         self.virt_state[0] = .{ .reg = freereg };
         return .{ freereg, alt };
     } else {
@@ -161,10 +161,10 @@ pub fn pop(self: *ThunderLightning) void {
 }
 
 pub fn pop2_as_reg_regimm(self: *ThunderLightning) !struct { IPReg, ValueState } {
-    self.val_stack_level -= 1;
     const reg, const virt = try self.pop_as_reg_virt();
     if (self.num_tracked != 1) @panic("do not");
     self.num_tracked = 0;
+    self.val_stack_level -= 1;
     const freereg: IPReg = if (reg == .rax) .r10 else .rax;
     try switch (virt) {
         .reg, .imm => return .{ reg, virt },
@@ -201,15 +201,16 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
 
     while (true) {
         const pos = r.pos;
+        _ = pos;
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
 
         const cur_cmp = next_cmp;
         next_cmp = null;
 
-        dbg("{x:04} => {x:04}:", .{ pos, code.get_target() });
+        // dbg("{x:04} => {x:04}:", .{ pos, code.get_target() });
         for (0..level) |_| dbg("  ", .{});
-        dbg("[{} {}] {s}\n", .{ self.val_stack_level, self.num_tracked, @tagName(inst) });
+        // dbg("[{} {}] {s}\n", .{ self.val_stack_level, self.num_tracked, @tagName(inst) });
         switch (inst) {
             .local_get => {
                 const idx = try r.readu();
@@ -287,7 +288,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
         }
     }
     try cfo.ret();
-    cfo.dbg_nasm(mod.allocator) catch unreachable;
+    // cfo.dbg_nasm(mod.allocator) catch unreachable;
     try code.finalize();
     return code.get_ptr(0, BlockFunc);
 }

@@ -281,7 +281,13 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
             .loop => {
                 c_ip += 1;
                 control[c_ip].count +|= 1;
-                if (stack.func.compiled_block == c_ip) {
+                if (true and stack.func.compiled_block == c_ip) {
+                    if (false) {
+                        for (stack.values.items[stack.locals_ptr..][0..stack.func.n_locals], 0..) |val, i| {
+                            severe("LOCAL {} [rdi+0x{x}] = {}\n", .{ i, 8 * i, val.u32() });
+                        }
+                        severe("mem_base {} mem_size {}\n", .{ @as(usize, @intFromPtr(in.mem.items.ptr)), in.mem.items.len });
+                    }
                     stack.func.compiled_func(stack.values.items[stack.locals_ptr..].ptr, stack.values.items[stack.values.items.len..].ptr, in.mem.items.ptr, in.mem.items.len);
                     c_ip = control[c_ip].jmp_t; // jump to matching end
                     r.pos = control[c_ip].off + 1; // but skip it, we never pushed a label to pop
