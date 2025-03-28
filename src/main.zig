@@ -65,7 +65,6 @@ pub fn main() !u8 {
     if (p.args.compile) |str| {
         const func, const blk = try blkspec(str);
         try mod.dbg_compile(func, blk);
-        return 0;
     }
 
     if (p.args.func) |func| {

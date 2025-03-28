@@ -14,6 +14,8 @@ const IPReg = X86Asm.IPReg;
 //
 // TODO: eleminate stack_base as this is should be a compile time known offset from frame_base
 
+pub const BlockFunc = *const fn (frame_base: [*]defs.StackValue, stack_base: [*]defs.StackValue, mem_start: [*]u8, mem_len: usize) callconv(.C) void;
+
 // c calling convention:
 const frame_base: IPReg = .rdi; // arg1: pointer to first local (then stack)
 const stack_base: IPReg = .rsi; // arg2: pointer to first stack slot to use (TODO: fold into arg1)
@@ -55,13 +57,16 @@ const ValueState = union(enum) {
 
 // if we are in state 2, transition to state 1.
 // return if rax is free to use already
+
+const fakew = false;
+
 pub fn push_value_prepare(self: *ThunderLightning) !u8 {
     self.val_stack_level += 1;
     if (self.num_tracked == 2) {
         try switch (self.virt_state[0]) {
             .on_stack => {},
-            .reg => |reg| self.cfo.movmr(stack_slot(self.val_stack_level - 3), reg),
-            .imm => |val| self.cfo.movmi(stack_slot(self.val_stack_level - 3), val.i32),
+            .reg => |reg| self.cfo.movmr(fakew, stack_slot(self.val_stack_level - 3), reg),
+            .imm => |val| self.cfo.movmi(fakew, stack_slot(self.val_stack_level - 3), val.i32),
             .local => @panic("should not happen:p"),
         };
         self.virt_state[0] = self.virt_state[1];
@@ -70,7 +75,7 @@ pub fn push_value_prepare(self: *ThunderLightning) !u8 {
     if (self.num_tracked == 1) {
         switch (self.virt_state[0]) {
             .local => |idx| {
-                try self.cfo.movrm(.rax, local_slot(idx));
+                try self.cfo.movrm(fakew, .rax, local_slot(idx));
                 self.virt_state[0] = .{ .reg = .rax };
             },
             .reg, .imm, .on_stack => {},
@@ -86,7 +91,7 @@ pub fn push_value_prepare(self: *ThunderLightning) !u8 {
 pub fn pop_as_reg_virt(self: *ThunderLightning) !struct { IPReg, ValueState } {
     self.val_stack_level -= 1;
     if (self.num_tracked == 0 or (self.num_tracked == 1 and self.virt_state[0] == .on_stack)) {
-        try self.cfo.movrm(.rax, stack_slot(self.val_stack_level)); // note: pre-adjusted
+        try self.cfo.movrm(fakew, .rax, stack_slot(self.val_stack_level)); // note: pre-adjusted
         self.num_tracked = 1;
         self.virt_state[0] = .{ .reg = .rax };
         return .{ .rax, .{ .on_stack = {} } };
@@ -96,7 +101,7 @@ pub fn pop_as_reg_virt(self: *ThunderLightning) !struct { IPReg, ValueState } {
             .reg => |reg| reg != .rax,
             else => true,
         }) .rax else .r10;
-        try self.cfo.movrm(freereg, stack_slot(self.val_stack_level)); // note: pre-adjusted
+        try self.cfo.movrm(fakew, freereg, stack_slot(self.val_stack_level)); // note: pre-adjusted
         self.virt_state[0] = .{ .reg = freereg };
         return .{ freereg, alt };
     } else {
@@ -107,9 +112,9 @@ pub fn pop_as_reg_virt(self: *ThunderLightning) !struct { IPReg, ValueState } {
             else => true,
         }) .rax else .r10;
         try switch (self.virt_state[0]) {
-            .on_stack => self.cfo.movrm(freereg, stack_slot(self.val_stack_level - 1)),
+            .on_stack => self.cfo.movrm(fakew, freereg, stack_slot(self.val_stack_level - 1)),
             .reg => |reg| return .{ reg, alt },
-            .imm => |val| self.cfo.movri(freereg, val.i32),
+            .imm => |val| self.cfo.movri(fakew, freereg, val.i32),
             .local => @panic("should not happen:p"),
         };
         self.virt_state[0] = .{ .reg = freereg };
@@ -119,7 +124,7 @@ pub fn pop_as_reg_virt(self: *ThunderLightning) !struct { IPReg, ValueState } {
 
 pub fn top_as_reg(self: *ThunderLightning) !IPReg {
     if (self.num_tracked == 0 or (self.num_tracked == 1 and self.virt_state[0] == .on_stack)) {
-        try self.cfo.movrm(.rax, stack_slot(self.val_stack_level - 1));
+        try self.cfo.movrm(fakew, .rax, stack_slot(self.val_stack_level - 1));
         self.num_tracked = 1;
         self.virt_state[0] = .{ .reg = .rax };
         return .rax;
@@ -127,8 +132,8 @@ pub fn top_as_reg(self: *ThunderLightning) !IPReg {
         try switch (self.virt_state[0]) {
             .on_stack => unreachable, // handled above
             .reg => |reg| return reg,
-            .imm => |val| self.cfo.movri(.rax, val.i32),
-            .local => |idx| self.cfo.movrm(.rax, local_slot(idx)),
+            .imm => |val| self.cfo.movri(fakew, .rax, val.i32),
+            .local => |idx| self.cfo.movrm(fakew, .rax, local_slot(idx)),
         };
         self.virt_state[0] = .{ .reg = .rax };
         return .rax;
@@ -140,21 +145,19 @@ pub fn top_as_reg(self: *ThunderLightning) !IPReg {
         }) .rax else .r10;
 
         try switch (self.virt_state[1]) {
-            .on_stack => self.cfo.movrm(freereg, stack_slot(self.val_stack_level - 1)),
+            .on_stack => self.cfo.movrm(fakew, freereg, stack_slot(self.val_stack_level - 1)),
             .reg => |reg| return reg,
-            .imm => |val| self.cfo.movri(freereg, val.i32),
-            .local => |idx| self.cfo.movrm(freereg, local_slot(idx)),
+            .imm => |val| self.cfo.movri(fakew, freereg, val.i32),
+            .local => |idx| self.cfo.movrm(fakew, freereg, local_slot(idx)),
         };
         self.virt_state[1] = .{ .reg = freereg };
         return freereg;
     }
 }
 
-pub fn pop_as_reg(self: *ThunderLightning) !IPReg {
-    const reg = self.top_as_reg();
+pub fn pop(self: *ThunderLightning) void {
     self.val_stack_level -= 1;
-    self.num_tracked -= 1;
-    return reg;
+    self.num_tracked = @max(1, self.num_tracked) - 1;
 }
 
 pub fn pop2_as_reg_regimm(self: *ThunderLightning) !struct { IPReg, ValueState } {
@@ -165,14 +168,14 @@ pub fn pop2_as_reg_regimm(self: *ThunderLightning) !struct { IPReg, ValueState }
     const freereg: IPReg = if (reg == .rax) .r10 else .rax;
     try switch (virt) {
         .reg, .imm => return .{ reg, virt },
-        .local => |idx| self.cfo.movrm(freereg, local_slot(idx)),
-        .on_stack => self.cfo.movrm(freereg, stack_slot(self.val_stack_level + 1)), // luring, load what is above the stack
+        .local => |idx| self.cfo.movrm(fakew, freereg, local_slot(idx)),
+        .on_stack => self.cfo.movrm(fakew, freereg, stack_slot(self.val_stack_level + 1)), // luring, load what is above the stack
     };
     return .{ reg, .{ .reg = freereg } };
 }
 
 // blk_idx is into the control array of function
-pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
+pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
     const c = try func.ensure_parsed(mod);
     const blk_off = c[blk_idx].off;
 
@@ -185,6 +188,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
     if ((try r.readByte()) != @intFromEnum(defs.OpCode.loop)) return error.NotImplemented;
     const top_args, const top_ret = try (try r.blocktype()).arity(mod);
     if (top_args != 0 or top_ret != 0) return error.NotImplemented;
+    const loop_header = code.get_target();
 
     // TODO: control should know the start level
     var level: u16 = 1;
@@ -193,10 +197,15 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
 
     errdefer cfo.dbg_nasm(mod.allocator) catch unreachable;
 
+    var next_cmp: ?X86Asm.Cond = null;
+
     while (true) {
         const pos = r.pos;
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
         if (inst == .end or inst == .else_) level -= 1;
+
+        const cur_cmp = next_cmp;
+        next_cmp = null;
 
         dbg("{x:04} => {x:04}:", .{ pos, code.get_target() });
         for (0..level) |_| dbg("  ", .{});
@@ -215,16 +224,17 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
             .local_set, .local_tee => {
                 const idx = try r.readu();
                 // TODO: top_as_regimm??
-                const src = try if (inst == .local_tee) self.top_as_reg() else self.pop_as_reg();
-                try cfo.movmr(local_slot(idx), src);
+                const src = try self.top_as_reg();
+                try cfo.movmr(fakew, local_slot(idx), src);
+                if (inst == .local_set) self.pop();
             },
             .i32_add => {
                 const dst, const src = try self.pop_as_reg_virt();
                 try switch (src) {
-                    .imm => |val| cfo.aritri(.add, dst, val.i32),
-                    .reg => |reg| cfo.arit(.add, dst, reg),
-                    .local => |idx| cfo.aritrm(.add, dst, local_slot(idx)),
-                    .on_stack => cfo.aritrm(.add, dst, stack_slot(self.val_stack_level)),
+                    .imm => |val| cfo.aritri(.add, fakew, dst, val.i32),
+                    .reg => |reg| cfo.arit(.add, fakew, dst, reg),
+                    .local => |idx| cfo.aritrm(.add, fakew, dst, local_slot(idx)),
+                    .on_stack => cfo.aritrm(.add, fakew, dst, stack_slot(self.val_stack_level)),
                 };
             },
             .i64_load => {
@@ -233,7 +243,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
                 _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                 const offset = try r.readu();
                 // TODO: baaaunds checking
-                try cfo.movrm(dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)));
+                try cfo.movrm(true, dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)));
             },
             .i64_store => {
                 const dst, const src = try self.pop2_as_reg_regimm();
@@ -243,14 +253,41 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !void {
                 // TODO: refactor forklift to use .decl constructors for EAddr!
                 const dstaddr = X86Asm.bi(mem_start, dst).o(@intCast(offset));
                 try switch (src) {
-                    .imm => |val| cfo.movmi(dstaddr, val.i32),
-                    .reg => |reg| cfo.movmr(dstaddr, reg),
+                    .imm => |val| cfo.movmi(true, dstaddr, val.i32),
+                    .reg => |reg| cfo.movmr(true, dstaddr, reg),
                     .local, .on_stack => unreachable, // TODO: separate type for reg/imm only?
                 };
             },
+            .i32_ne => {
+                const dst, const src = try self.pop_as_reg_virt();
+                try switch (src) {
+                    .imm => |val| cfo.aritri(.cmp, fakew, dst, val.i32),
+                    .reg => |reg| cfo.arit(.cmp, fakew, dst, reg),
+                    .local => |idx| cfo.aritrm(.cmp, fakew, dst, local_slot(idx)),
+                    .on_stack => cfo.aritrm(.cmp, fakew, dst, stack_slot(self.val_stack_level)),
+                };
+                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                if (peekinst != .br_if) return error.NotImplemented;
+                next_cmp = .ne;
+                self.pop();
+            },
+            .br_if => {
+                const label = try r.readu();
+                if (label != 0) return error.NotImplemented;
+                if (cur_cmp) |cmp| {
+                    try cfo.jbck(cmp, loop_header);
+                } else {
+                    return error.NotImplemented;
+                }
+            },
+            .end => break,
             else => {
                 return error.NotImplemented;
             },
         }
     }
+    try cfo.ret();
+    cfo.dbg_nasm(mod.allocator) catch unreachable;
+    try code.finalize();
+    return code.get_ptr(0, BlockFunc);
 }

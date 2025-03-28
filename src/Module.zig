@@ -596,7 +596,9 @@ pub fn dbg_compile(self: *Module, func: u32, blk: u32) !void {
     }
 
     const f = &self.funcs_internal[func - self.n_funcs_import];
-    _ = try @import("./ThunderLightning.zig").compile_block(self, f, blk);
+    const compiled = try @import("./ThunderLightning.zig").compile_block(self, f, blk);
+    f.compiled_block = blk;
+    f.compiled_func = compiled;
 }
 
 test "basic functionality" {

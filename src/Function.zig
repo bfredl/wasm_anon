@@ -7,6 +7,9 @@ control: ?[]ControlItem = null,
 
 name: ?[]const u8 = null,
 
+compiled_block: u32 = 0xFFFFFFF,
+compiled_func: BlockFunc = undefined,
+
 call_count: Counter = 0,
 
 // need not be strict but can be an over-estimate
@@ -22,6 +25,7 @@ const dbg = Module.dbg;
 const severe = std.debug.print;
 
 const Reader = @import("./Reader.zig");
+const BlockFunc = @import("./ThunderLightning.zig").BlockFunc;
 
 const ControlItem = struct {
     off: u32, // this is absolute (relative to mod.raw)
