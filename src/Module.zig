@@ -395,6 +395,17 @@ pub fn type_arity(self: *const Module, type_idx: u32) !struct { u16, u16 } {
     return .{ n_params, n_res };
 }
 
+pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType) !void {
+    var r = self.reader_at(self.types[type_idx]);
+    const tag = try r.readByte();
+    if (tag != 0x60) return error.InvalidFormat;
+    const n_params: u16 = @intCast(try r.readu());
+    for (0..n_params) |i| {
+        out_types[i] = @enumFromInt(try r.readByte());
+    }
+    // TODO: chain reading of res vec!
+}
+
 pub fn table_section(self: *Module, in: *Instance) !void {
     var r = self.reader_at(self.table_off);
     const len = try r.readu();

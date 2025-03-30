@@ -12,7 +12,7 @@ compiled_func: BlockFunc = undefined,
 
 call_count: Counter = 0,
 
-n_locals: u32 = 0,
+local_types: []defs.ValType = &.{},
 
 // need not be strict but can be an over-estimate
 val_stack_max_height: u16 = 0,
@@ -50,14 +50,19 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
 
     var n_locals: u32 = self.n_params;
     const n_local_defs = try r.readu();
+
+    var local_types: std.ArrayList(defs.ValType) = try .initCapacity(mod.allocator, self.n_params + n_local_defs);
+    try mod.type_params(self.typeidx, local_types.addManyAsSliceAssumeCapacity(self.n_params));
+
     for (0..n_local_defs) |_| {
         const n_decl = try r.readu();
         n_locals += n_decl;
         const typ: defs.ValType = @enumFromInt(try r.readByte());
+        try local_types.appendNTimes(typ, n_decl);
         dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
     dbg("\n", .{});
-    self.n_locals = n_locals;
+    self.local_types = try local_types.toOwnedSlice();
 
     try self.parse_body(mod, r, n_locals);
 }

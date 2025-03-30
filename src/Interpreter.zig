@@ -283,7 +283,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                 control[c_ip].count +|= 1;
                 if (true and stack.func.compiled_block == c_ip) {
                     if (false) {
-                        for (stack.values.items[stack.locals_ptr..][0..stack.func.n_locals], 0..) |val, i| {
+                        for (stack.values.items[stack.locals_ptr..][0..stack.func.local_types.len], 0..) |val, i| {
                             severe("LOCAL {} [rdi+0x{x}] = {}\n", .{ i, 8 * i, val.u32() });
                         }
                         severe("mem_base {} mem_size {}\n", .{ @as(usize, @intFromPtr(in.mem.items.ptr)), in.mem.items.len });
