@@ -43,6 +43,14 @@ pub fn disasm_block(mod: *Module, blk_off: u32, in_block: bool) !void {
             .call => {
                 const idx = try r.readu();
                 dbg(" {}", .{idx});
+                if (idx < mod.n_funcs_import) {
+                    dbg(" imported", .{});
+                } else if (idx < mod.n_funcs_import + mod.funcs_internal.len) {
+                    const f = mod.funcs_internal[idx - mod.n_funcs_import];
+                    if (f.name) |nom| {
+                        dbg(" {s}", .{nom});
+                    }
+                }
                 // TODO: find the type
             },
             .call_indirect => {

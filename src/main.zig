@@ -48,7 +48,7 @@ pub fn main() !u8 {
 
     var mod = try wasm_shelf.Module.parse(buf, allocator);
     defer mod.deinit();
-    defer if (p.args.stats) |s| mod.dump_counts(s);
+    defer if (p.args.stats) |s| mod.dump_counts(s) catch unreachable;
 
     if (p.args.inspect > 0) {
         try mod.dbg_imports();
@@ -144,7 +144,7 @@ fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void
     const arg = args_ret[0].u32();
     dbg("wasi exit: {}\n", .{arg});
 
-    std.posix.exit(0); // for benchmarking which expect 0 ret..
+    // std.posix.exit(0); // for benchmarking which expect 0 ret..
     state.exit_status = arg;
     return error.WASMTrap;
 }

@@ -531,7 +531,7 @@ fn flag(flags: []const u8, f: u8) bool {
     return std.mem.indexOfScalar(u8, flags, f) != null;
 }
 
-pub fn dump_counts(self: *Module, flags: []const u8) void {
+pub fn dump_counts(self: *Module, flags: []const u8) !void {
     const all = flag(flags, 'A');
     const fo = self.n_funcs_import;
 
@@ -556,15 +556,30 @@ pub fn dump_counts(self: *Module, flags: []const u8) void {
         severe("{}: summa\n\n", .{summa});
     }
 
-    if (all or flag(flags, 'l') or flag(flags, 'w')) {
+    var big_arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer big_arena.deinit();
+    const Block = struct {
+        count: usize,
+        str: []u8,
+        off: u32,
+        fn busierThan(ctx: void, a: @This(), b: @This()) bool {
+            _ = ctx;
+            return a.count > b.count;
+        }
+    };
+    var loop_list = std.ArrayList(Block).init(self.allocator);
+    defer loop_list.deinit();
+
+    if (all or flag(flags, 'l') or flag(flags, 'w') or flag(flags, 'W')) {
         var worst_count: u64 = 0;
         var worst_pos: u32 = 0xffffffff;
 
         for (self.funcs_internal, 0..) |i, fi| {
             if (i.control) |c| {
                 for (c, 0..) |ci, cidx| {
-                    if ((all or flag(flags, 'l')) and ci.count > 0) {
-                        severe("{} : {}:{} {s} \n", .{ ci.count, fo + fi, cidx, i.name orelse "???" });
+                    if ((all or flag(flags, 'l') or flag(flags, 'W')) and ci.count > 0) {
+                        const string = try std.fmt.allocPrint(big_arena.allocator(), "{} : {}:{} {s} \n", .{ ci.count, fo + fi, cidx, i.name orelse "???" });
+                        try loop_list.append(.{ .count = ci.count, .str = string, .off = ci.off });
                     }
                     if (ci.count > worst_count) {
                         worst_count = ci.count;
@@ -574,8 +589,16 @@ pub fn dump_counts(self: *Module, flags: []const u8) void {
             }
         }
         severe("\n\n", .{});
+        std.sort.heap(Block, loop_list.items, {}, Block.busierThan);
 
-        if ((all or flag(flags, 'w')) and worst_count > 0) {
+        const maxen = @min(loop_list.items.len, 10);
+        if ((all or flag(flags, 'W')) and worst_count > 0) {
+            for (0..maxen) |pi| {
+                const i = maxen - 1 - pi;
+                severe("\n\npretty bad: {s}\n", .{loop_list.items[i].str});
+                self.disasm_block(loop_list.items[i].off, false) catch {};
+            }
+        } else if ((all or flag(flags, 'w')) and worst_count > 0) {
             severe("THE ABSOLUTE WORST LOOP: {}\n", .{worst_count});
             self.disasm_block(worst_pos, false) catch {};
         }
