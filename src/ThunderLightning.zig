@@ -166,9 +166,13 @@ pub fn top_as_reg(self: *ThunderLightning, pre_w: bool) !IPReg {
     }
 }
 
-pub fn pop(self: *ThunderLightning) void {
+pub fn pop(self: *ThunderLightning) ValueState {
     self.val_stack_level -= 1;
-    self.num_tracked = @max(1, self.num_tracked) - 1;
+    if (self.num_tracked > 0) {
+        self.num_tracked -= 1;
+        return self.virt_state[self.num_tracked]; // pre-decremented
+    }
+    return .{ .on_stack = {} };
 }
 
 pub fn pop2_as_reg_regimm(self: *ThunderLightning, w1: bool, w2: bool) !struct { IPReg, ValueState } {
@@ -240,7 +244,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
                 const w = try wide(func.local_types[idx]);
                 const src = try self.top_as_reg(w);
                 try cfo.movmr(w, local_slot(idx), src);
-                if (inst == .local_set) self.pop();
+                if (inst == .local_set) _ = self.pop();
             },
             .i32_add => {
                 const dst, const src = try self.pop_as_reg_virt(false);
@@ -251,6 +255,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
                     .on_stack => cfo.aritrm(.add, false, dst, stack_slot(self.val_stack_level)),
                 };
             },
+            // TODO: need to cleanup ForkLift before we can structurize this.
             .i64_load => {
                 const dst = try self.top_as_reg(false);
                 const alignas = try r.readu();
@@ -258,6 +263,15 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
                 const offset = try r.readu();
                 // TODO: baaaunds checking
                 try cfo.movrm(true, dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)));
+                self.virt_wide[self.num_tracked - 1] = true;
+            },
+            .i32_load8_u => {
+                const dst = try self.top_as_reg(false);
+                const alignas = try r.readu();
+                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                const offset = try r.readu();
+                // TODO: baaaunds checking
+                try cfo.movrm_byte(false, dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)));
                 self.virt_wide[self.num_tracked - 1] = true;
             },
             .i64_store => {
@@ -268,8 +282,21 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
                 // TODO: refactor forklift to use .decl constructors for EAddr!
                 const dstaddr = X86Asm.bi(mem_start, dst).o(@intCast(offset));
                 try switch (src) {
-                    .imm => |val| cfo.movmi(true, dstaddr, val.i32),
+                    .imm => |val| cfo.movmi(true, dstaddr, @intCast(val.i64)), // TODO: fails for BIG intermediates
                     .reg => |reg| cfo.movmr(true, dstaddr, reg),
+                    .local, .on_stack => unreachable, // TODO: separate type for reg/imm only?
+                };
+            },
+            .i32_store8 => {
+                const dst, const src = try self.pop2_as_reg_regimm(false, false);
+                const alignas = try r.readu();
+                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                const offset = try r.readu();
+                // TODO: refactor forklift to use .decl constructors for EAddr!
+                const dstaddr = X86Asm.bi(mem_start, dst).o(@intCast(offset));
+                try switch (src) {
+                    .imm => |val| cfo.movmi_byte(dstaddr, @truncate(val.u32())),
+                    .reg => |reg| cfo.movmr_byte(dstaddr, reg),
                     .local, .on_stack => unreachable, // TODO: separate type for reg/imm only?
                 };
             },
@@ -284,7 +311,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
                 const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
                 if (peekinst != .br_if) return error.NotImplemented;
                 next_cmp = .ne;
-                self.pop();
+                _ = self.pop();
             },
             .br_if => {
                 const label = try r.readu();
@@ -292,7 +319,14 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
                 if (cur_cmp) |cmp| {
                     try cfo.jbck(cmp, loop_header);
                 } else {
-                    return error.NotImplemented;
+                    const src = self.pop();
+                    try switch (src) {
+                        .imm => |_| @panic("unbranch this"),
+                        .reg => |reg| cfo.aritri(.cmp, false, reg, 0),
+                        .local => |idx| cfo.aritmi(.cmp, false, local_slot(idx), 0),
+                        .on_stack => cfo.aritmi(.cmp, false, stack_slot(self.val_stack_level), 0),
+                    };
+                    try cfo.jbck(.ne, loop_header);
                 }
             },
             .end => break,

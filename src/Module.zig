@@ -49,8 +49,13 @@ start_func: u32 = defs.funcref_nil,
 
 istat: [256]u32 = @splat(0),
 
+// TODO: tricky. traces might wanna depend on per-instance state (like some
+// imported functions being JIT-able, etc)
+traces: std.ArrayListUnmanaged(LightningTrace) = .{},
+
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
+const LightningTrace = @import("./ThunderLightning.zig").BlockFunc;
 
 pub fn reader_at(self: Module, off: u32) Reader {
     return .{ .buffer = self.raw, .pos = off };
@@ -625,9 +630,10 @@ pub fn dbg_compile(self: *Module, func: u32, blk: u32) !void {
     }
 
     const f = &self.funcs_internal[func - self.n_funcs_import];
+    const c = try f.ensure_parsed(self);
     const compiled = try @import("./ThunderLightning.zig").compile_block(self, f, blk);
-    f.compiled_block = blk;
-    f.compiled_func = compiled;
+    try self.traces.append(self.allocator, compiled);
+    c[blk].trace_idx = @intCast(self.traces.items.len - 1);
 }
 
 test "basic functionality" {

@@ -25,10 +25,11 @@ pub fn build(b: *std.Build) void {
     const clap = b.dependency("clap", .{});
     exe.root_module.addImport("clap", clap.module("clap"));
 
-    b.installArtifact(exe);
+    const inst = b.addInstallArtifact(exe, .{});
+    b.getInstallStep().dependOn(&inst.step);
 
     const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
+    run_cmd.step.dependOn(&inst.step);
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
