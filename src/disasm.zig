@@ -3,12 +3,18 @@ const defs = @import("./defs.zig");
 const dbg = std.debug.print;
 const std = @import("std");
 const Reader = @import("./Reader.zig");
+const Function = @import("./Function.zig");
 
-// TODO: this should take in optional "post-mortem" info from a function
-pub fn disasm_block(mod: *Module, blk_off: u32, in_block: bool) !void {
-    var level: u32 = 1; // non-zero in case we disasm a "end" or "else_"
+pub fn disasm_block(mod: *Module, func: *Function, blk_idx: u32) !void {
+    const c = try func.ensure_parsed(mod);
+    const blk_off = c[blk_idx].off;
 
+    // if this is a blok/loop/if statement, we will increment right back
+    var c_ip: u32 = if (blk_idx > 0) blk_idx - 1 else blk_idx;
     var r = mod.reader_at(blk_off);
+    const i: defs.OpCode = @enumFromInt(r.peekByte());
+    var level: u32 = 0; // make it non-zero in case we disasm a "end" or "else_"
+    if (blk_idx == 0 or (i != .block and i != .loop and i != .if_)) level += 1;
     while (true) {
         const pos = r.pos;
         const inst: defs.OpCode = @enumFromInt(try r.readByte());
@@ -19,17 +25,35 @@ pub fn disasm_block(mod: *Module, blk_off: u32, in_block: bool) !void {
         dbg("{s}", .{@tagName(inst)});
         switch (inst) {
             .block, .loop, .if_ => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("naaaaje");
                 level += 1;
                 const typ = try r.blocktype();
                 dbg(" typ={}", .{typ});
+                if (inst != .block) {
+                    dbg(" ({})", .{c[c_ip].count});
+                }
             },
-            .end, .ret => {},
+            .end => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("naaaaje");
+                dbg(" ({})", .{c[c_ip].count});
+            },
+            .ret => {},
             .else_ => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("naaaaje");
                 level += 1;
+                dbg(" ({})", .{c[c_ip].count});
             },
             .br, .br_if => {
                 const idx = try r.readu();
                 dbg(" {}", .{idx});
+                if (inst == .br_if) {
+                    c_ip += 1;
+                    if (c[c_ip].off != pos) @panic("naaaaje");
+                    dbg(" ({})", .{c[c_ip].count});
+                }
             },
             .br_table => {
                 const n = try r.readu();
@@ -131,6 +155,6 @@ pub fn disasm_block(mod: *Module, blk_off: u32, in_block: bool) !void {
         }
         dbg("\n", .{});
 
-        if (level <= @as(u32, if (in_block) 0 else 1)) break;
+        if (level <= 0) break;
     }
 }

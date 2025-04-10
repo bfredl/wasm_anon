@@ -119,10 +119,15 @@ pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !voi
             .br, .br_if => {
                 // try clist.append(.{ .off = pos, .jmp_t = 0 });
                 const idx = try r.readu();
-                if (inst == .br_if) val_stack_level -= 1;
                 dbg(" {}", .{idx});
+                if (inst == .br_if) {
+                    val_stack_level -= 1;
+                    try clist.append(.{ .off = pos, .jmp_t = 0 });
+                }
             },
             .br_table => {
+                // TODO: this is a bit of a crash-out. need to look into real-world compiler
+                // output to figure out how to best represent this in profile/trace codegen
                 val_stack_level -= 1;
                 const n = try r.readu();
                 for (0..n) |_| {

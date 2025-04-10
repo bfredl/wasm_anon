@@ -561,7 +561,8 @@ pub fn dump_counts(self: *Module, flags: []const u8) !void {
     const Block = struct {
         count: usize,
         str: []u8,
-        off: u32,
+        func: *Function,
+        blk: u32,
         fn busierThan(ctx: void, a: @This(), b: @This()) bool {
             _ = ctx;
             return a.count > b.count;
@@ -571,19 +572,15 @@ pub fn dump_counts(self: *Module, flags: []const u8) !void {
     defer loop_list.deinit();
 
     if (all or flag(flags, 'l') or flag(flags, 'w') or flag(flags, 'W')) {
-        var worst_count: u64 = 0;
-        var worst_pos: u32 = 0xffffffff;
-
-        for (self.funcs_internal, 0..) |i, fi| {
+        for (self.funcs_internal, 0..) |*i, fi| {
             if (i.control) |c| {
                 for (c, 0..) |ci, cidx| {
-                    if ((all or flag(flags, 'l') or flag(flags, 'W')) and ci.count > 0) {
-                        const string = try std.fmt.allocPrint(big_arena.allocator(), "{} : {}:{} {s} \n", .{ ci.count, fo + fi, cidx, i.name orelse "???" });
-                        try loop_list.append(.{ .count = ci.count, .str = string, .off = ci.off });
-                    }
-                    if (ci.count > worst_count) {
-                        worst_count = ci.count;
-                        worst_pos = ci.off;
+                    const inst: defs.OpCode = @enumFromInt(self.raw[ci.off]);
+                    if (inst == .loop) {
+                        if ((all or flag(flags, 'l') or flag(flags, 'W')) and ci.count > 0) {
+                            const string = try std.fmt.allocPrint(big_arena.allocator(), "{} : {}:{} {s} \n", .{ ci.count, fo + fi, cidx, i.name orelse "???" });
+                            try loop_list.append(.{ .count = ci.count, .str = string, .func = i, .blk = @intCast(cidx) });
+                        }
                     }
                 }
             }
@@ -592,15 +589,13 @@ pub fn dump_counts(self: *Module, flags: []const u8) !void {
         std.sort.heap(Block, loop_list.items, {}, Block.busierThan);
 
         const maxen = @min(loop_list.items.len, 10);
-        if ((all or flag(flags, 'W')) and worst_count > 0) {
+        if (all or flag(flags, 'W')) {
             for (0..maxen) |pi| {
                 const i = maxen - 1 - pi;
-                severe("\n\npretty bad: {s}\n", .{loop_list.items[i].str});
-                self.disasm_block(loop_list.items[i].off, false) catch {};
+                const bad = &loop_list.items[i];
+                severe("\n\npretty bad: {s}\n", .{bad.str});
+                self.disasm_block(bad.func, bad.blk) catch {};
             }
-        } else if ((all or flag(flags, 'w')) and worst_count > 0) {
-            severe("THE ABSOLUTE WORST LOOP: {}\n", .{worst_count});
-            self.disasm_block(worst_pos, false) catch {};
         }
     }
 }
@@ -618,7 +613,7 @@ pub fn dbg_disasm(self: *Module, func: u32, blk: u32) !void {
     const c = try f.ensure_parsed(self);
 
     if (blk >= c.len) @panic("label out of bounds");
-    try self.disasm_block(c[blk].off, blk == 0);
+    try self.disasm_block(f, blk);
 }
 
 pub fn dbg_compile(self: *Module, func: u32, blk: u32) !void {

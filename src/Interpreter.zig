@@ -142,7 +142,7 @@ pub fn init_locals(stack: *Interpreter, r: *Reader) !void {
 // TODO: this should be made flexible enough to allow ie a nested callback from a a host function
 // TODO: use stack.values to pass args/ret ?
 pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
-    const control = try self.ensure_parsed(mod);
+    const c = try self.ensure_parsed(mod);
 
     // NB: in the spec all locals are bundled into a "frame" object as a single
     // entry on the stack. We do a little unbundling to keep stack object sizes
@@ -157,7 +157,7 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
     try stack.init_locals(&r);
     stack.enter_frame();
     // entire body is implicitly a block, producing the return values
-    try stack.push_label(@intCast(control.len - 1), @intCast(self.n_res));
+    try stack.push_label(@intCast(c.len - 1), @intCast(self.n_res));
     stack.func = self;
 
     errdefer if (logga) stack.showstack();
@@ -170,7 +170,7 @@ pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance
 
 fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
     var c_ip: u32 = 0;
-    var control = stack.func.control.?;
+    var c = stack.func.control.?;
     const mod = in.mod;
 
     // note: this is is just to allow appendAssumeCapacity and similar.
@@ -280,7 +280,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
             },
             .loop => {
                 c_ip += 1;
-                control[c_ip].count +|= 1;
+                c[c_ip].count +|= 1;
                 if (true and stack.func.compiled_block == c_ip) {
                     if (false) {
                         for (stack.values.items[stack.locals_ptr..][0..stack.func.local_types.len], 0..) |val, i| {
@@ -289,8 +289,8 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                         severe("mem_base {} mem_size {}\n", .{ @as(usize, @intFromPtr(in.mem.items.ptr)), in.mem.items.len });
                     }
                     stack.func.compiled_func(stack.values.items[stack.locals_ptr..].ptr, stack.values.items[stack.values.items.len..].ptr, in.mem.items.ptr, in.mem.items.len);
-                    c_ip = control[c_ip].jmp_t; // jump to matching end
-                    r.pos = control[c_ip].off + 1; // but skip it, we never pushed a label to pop
+                    c_ip = c[c_ip].jmp_t; // jump to matching end
+                    r.pos = c[c_ip].off + 1; // but skip it, we never pushed a label to pop
                 } else {
                     const typ = try r.blocktype();
                     const n_args, const n_results = try typ.arity(mod);
@@ -304,9 +304,12 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
             },
             .br_if => {
                 const idx = try r.readu();
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
                 if (idx + 1 > stack.labels.items.len) return error.RuntimeError;
                 const val = try stack.pop();
                 if (val.i32 != 0) {
+                    c[c_ip].count +|= 1;
                     label_target = idx;
                 }
             },
@@ -327,24 +330,26 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                 const n_args, const n_results = try typ.arity(mod);
                 if (n_args > 0) return error.NotImplemented;
                 // target: right after "loop"
-                if (control[c_ip].off != pos) @panic("MANIC FEAR");
-                try stack.push_label(control[c_ip].jmp_t, n_results);
+                if (c[c_ip].off != pos) @panic("MANIC FEAR");
+                try stack.push_label(c[c_ip].jmp_t, n_results);
             },
             .if_ => {
                 c_ip += 1;
                 const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(mod);
                 if (n_args > 0) return error.NotImplemented;
-                if (control[c_ip].off != pos) @panic("TREMBLING FEAR");
+                if (c[c_ip].off != pos) @panic("TREMBLING FEAR");
                 const val = try stack.pop();
                 if (val.i32 != 0) {
-                    try stack.push_label(control[c_ip].jmp_t, n_results); // we worry about else vs end when we get there..
+                    try stack.push_label(c[c_ip].jmp_t, n_results); // we worry about else vs end when we get there..
+                    c[c_ip].count +|= 1;
                 } else {
-                    c_ip = control[c_ip].jmp_t;
-                    r.pos = control[c_ip].off;
+                    c_ip = c[c_ip].jmp_t;
+                    r.pos = c[c_ip].off;
                     const c_inst: defs.OpCode = @enumFromInt(try r.readByte());
+                    c[c_ip].count +|= 1; // as we skip over the "end" do this regardles
                     if (c_inst == .else_) {
-                        try stack.push_label(control[c_ip].jmp_t, n_results);
+                        try stack.push_label(c[c_ip].jmp_t, n_results);
                     } else {
                         if (c_inst != .end) @panic("SCREAMING FEAR");
                         // we already skipped over the "end"
@@ -353,11 +358,12 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
             },
             .else_ => {
                 c_ip += 1;
-                if (control[c_ip].off != pos) @panic("CONFLICKTED FEAR");
+                if (c[c_ip].off != pos) @panic("CONFLICKTED FEAR");
                 // we can only reach/jump to else from inside the "then" block. time to exit!
-                c_ip = control[c_ip].jmp_t;
+                c_ip = c[c_ip].jmp_t;
                 // execute the end inline
-                r.pos = control[c_ip].off + 1;
+                r.pos = c[c_ip].off + 1;
+                c[c_ip].count +|= 1; // but still count the "end" as taken
                 // TODO: MYSKO
                 _ = stack.labels.pop() orelse break;
             },
@@ -429,16 +435,19 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                     r.pos = called.codeoff;
                     try init_locals(stack, r);
                     stack.func = called;
-                    control = called_control;
+                    c = called_control;
                     stack.enter_frame();
                     try stack.values.ensureUnusedCapacity(called.val_stack_max_height);
                     // entire body is implicitly a block, producing the return values
-                    try stack.push_label(@intCast(control.len - 1), @intCast(stack.func.n_res));
+                    try stack.push_label(@intCast(c.len - 1), @intCast(stack.func.n_res));
                     c_ip = 0;
                 } else @panic("SHAKING FEAR");
             },
             .end => {
                 c_ip += 1;
+                // effectively, this is meant as a counter for the code right past the "end"
+                // therefore, this will also be incremented by edge cases which jumps to this "end" but skips it itself
+                c[c_ip].count +|= 1;
                 _ = stack.labels.pop() orelse @panic("RUSHED FEAR");
                 // todo: cannot do this if we popped a "loop" header
                 // if (value_stack.items.len != item.stack_level + item.n_vals) @panic("SAD FEAR");
@@ -454,7 +463,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                             );
                         }
                         stack.func = f.func;
-                        control = stack.func.control.?;
+                        c = stack.func.control.?;
                         if (stack.values.items.len < stack.locals_ptr) @panic("ayyooooo");
                         stack.values.items.len = stack.locals_ptr + returned.n_res;
                         stack.frame_ptr = f.frame_ptr;
@@ -468,7 +477,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                         return;
                     }
                 } else {
-                    if (c_ip >= control.len or control[c_ip].off != pos) @panic("PANIKED FEAR");
+                    if (c_ip >= c.len or c[c_ip].off != pos) @panic("PANIKED FEAR");
                 }
                 // TODO
                 // if (stack.nvals() != self.n_res) return error.RuntimeError;
@@ -494,10 +503,10 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                         const d: u32 = @bitCast((try stack.pop()).i32);
                         try in.memmove(d, s, n);
                     },
-                    inline else => |c| {
-                        if (@intFromEnum(c) < 8) {
+                    inline else => |i| {
+                        if (@intFromEnum(i) < 8) {
                             const dst = try stack.top();
-                            dst.* = try @field(ops.convert, @tagName(c))(dst.*);
+                            dst.* = try @field(ops.convert, @tagName(i))(dst.*);
                         } else {
                             // TODO: @tagname(foo) but "_" safe?
                             severe("not implemented: prefixed:{s}, aborting!\n", .{@tagName(code)});
@@ -600,12 +609,12 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
 
         if (label_target) |idx| {
             c_ip = try stack.pop_and_jump_labels(idx);
-            r.pos = control[c_ip].off;
+            r.pos = c[c_ip].off;
 
             // we don't want to rexec the loop header. however execute the "end"
             // target to clean-up the stack.
             if (r.buffer[r.pos] == @intFromEnum(defs.OpCode.loop)) {
-                control[c_ip].count +|= 1;
+                c[c_ip].count +|= 1;
                 r.pos += 1;
                 _ = try r.blocktype();
             } else {
@@ -621,7 +630,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                 continue;
             }
         }
-        if (c_ip == control.len) {
+        if (c_ip == c.len) {
             @panic("allllllll");
         }
     }
