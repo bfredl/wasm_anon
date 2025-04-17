@@ -189,7 +189,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
         }
 
         const pos: u32 = r.pos;
-        const inst: defs.OpCode = @enumFromInt(try r.readByte());
+        const inst = try r.readOpCode();
         dbg("{x:04}: {s} (c={}, values={}, labels={})\n", .{ pos, @tagName(inst), c_ip, stack.values.items.len, stack.labels.items.len });
         var label_target: ?u32 = null;
         mod.istat[@intFromEnum(inst)] +|= 1;
@@ -289,7 +289,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                         severe("mem_base {} mem_size {}\n", .{ @as(usize, @intFromPtr(in.mem.items.ptr)), in.mem.items.len });
                     }
                     const trace = mod.traces.items[c[c_ip].trace_idx];
-                    trace(stack.values.items[stack.locals_ptr..].ptr, stack.values.items[stack.values.items.len..].ptr, in.mem.items.ptr, in.mem.items.len);
+                    trace.func(stack.values.items[stack.locals_ptr..].ptr, stack.values.items[stack.values.items.len..].ptr, in.mem.items.ptr, in.mem.items.len);
                     c_ip = c[c_ip].jmp_t; // jump to matching end
                     r.pos = c[c_ip].off + 1; // but skip it, we never pushed a label to pop
                 } else {
@@ -347,7 +347,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                 } else {
                     c_ip = c[c_ip].jmp_t;
                     r.pos = c[c_ip].off;
-                    const c_inst: defs.OpCode = @enumFromInt(try r.readByte());
+                    const c_inst = try r.readOpCode();
                     c[c_ip].count +|= 1; // as we skip over the "end" do this regardles
                     if (c_inst == .else_) {
                         try stack.push_label(c[c_ip].jmp_t, n_results);

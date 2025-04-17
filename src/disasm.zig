@@ -17,7 +17,7 @@ pub fn disasm_block(mod: *Module, func: *Function, blk_idx: u32) !void {
     if (blk_idx == 0 or (i != .block and i != .loop and i != .if_)) level += 1;
     while (true) {
         const pos = r.pos;
-        const inst: defs.OpCode = @enumFromInt(try r.readByte());
+        const inst = try r.readOpCode();
         if (inst == .end or inst == .else_) level -= 1;
 
         dbg("{x:04}:", .{pos});

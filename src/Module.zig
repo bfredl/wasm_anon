@@ -55,7 +55,7 @@ traces: std.ArrayListUnmanaged(LightningTrace) = .{},
 
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
-const LightningTrace = @import("./ThunderLightning.zig").BlockFunc;
+const LightningTrace = @import("./ThunderLightning.zig").LightningTrace;
 
 pub fn reader_at(self: Module, off: u32) Reader {
     return .{ .buffer = self.raw, .pos = off };

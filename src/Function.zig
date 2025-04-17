@@ -80,7 +80,7 @@ pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !voi
 
     while (level >= 1) {
         const pos = r.pos;
-        const inst: defs.OpCode = @enumFromInt(try r.readByte());
+        const inst = try r.readOpCode();
         if (inst == .end or inst == .else_) level -= 1;
 
         dbg("{x:04}:", .{pos});

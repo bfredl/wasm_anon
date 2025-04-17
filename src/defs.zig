@@ -388,3 +388,11 @@ pub const HostFunc = struct {
     n_args: u16,
     n_res: u16,
 };
+
+pub const Instruction = union(enum) {
+    block: BlockType,
+    loop: BlockType,
+    if_: BlockType,
+
+    other__fixme: OpCode, // not yet converted
+};

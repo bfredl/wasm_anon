@@ -38,6 +38,22 @@ pub fn readByte(r: *Reader) !u8 {
     return b;
 }
 
+pub fn readOpCode(r: *Reader) !defs.OpCode {
+    return @enumFromInt(try r.readByte());
+}
+
+pub fn readOp(r: *Reader) !defs.Instruction {
+    const opcode = try readOpCode();
+    switch (opcode) {
+        .block => return .{ .block = try r.blocktype() },
+        .loop => return .{ .loop = try r.blocktype() },
+        .if_ => return .{ .if_ = try r.blocktype() },
+        else => {
+            return .{ .other__fixme = opcode };
+        },
+    }
+}
+
 pub fn readBytes(r: *Reader, len: u32) ![]const u8 {
     if (r.pos + len > r.buffer.len) return error.EndOfStream;
     const str = r.buffer[r.pos..][0..len];

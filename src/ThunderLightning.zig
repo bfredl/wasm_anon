@@ -16,6 +16,10 @@ const IPReg = X86Asm.IPReg;
 
 pub const BlockFunc = *const fn (frame_base: [*]defs.StackValue, stack_base: [*]defs.StackValue, mem_start: [*]u8, mem_len: usize) callconv(.C) void;
 
+pub const LightningTrace = struct {
+    func: BlockFunc,
+};
+
 // c calling convention:
 const frame_base: IPReg = .rdi; // arg1: pointer to first local (then stack)
 const stack_base: IPReg = .rsi; // arg2: pointer to first stack slot to use (TODO: fold into arg1)
@@ -190,7 +194,7 @@ pub fn pop2_as_reg_regimm(self: *ThunderLightning, w1: bool, w2: bool) !struct {
 }
 
 // blk_idx is into the control array of function
-pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
+pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !LightningTrace {
     const c = try func.ensure_parsed(mod);
     const blk_off = c[blk_idx].off;
 
@@ -217,7 +221,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
     while (true) {
         const pos = r.pos;
         _ = pos;
-        const inst: defs.OpCode = @enumFromInt(try r.readByte());
+        const inst = try r.readOpCode();
         if (inst == .end or inst == .else_) level -= 1;
 
         const cur_cmp = next_cmp;
@@ -338,5 +342,5 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !BlockFunc {
     try cfo.ret();
     // cfo.dbg_nasm(mod.allocator) catch unreachable;
     try code.finalize();
-    return code.get_ptr(0, BlockFunc);
+    return .{ .func = code.get_ptr(0, BlockFunc) };
 }
