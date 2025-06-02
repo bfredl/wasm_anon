@@ -229,7 +229,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !LightningTrac
 
         // dbg("{x:04} => {x:04}:", .{ pos, code.get_target() });
         for (0..level) |_| dbg("  ", .{});
-        // dbg("[{} {}] {s}\n", .{ self.val_stack_level, self.num_tracked, @tagName(inst) });
+        dbg("[{} {}] {s}\n", .{ self.val_stack_level, self.num_tracked, @tagName(inst) });
         switch (inst) {
             .local_get => {
                 const idx = try r.readu();
@@ -257,6 +257,15 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !LightningTrac
                     .reg => |reg| cfo.arit(.add, false, dst, reg),
                     .local => |idx| cfo.aritrm(.add, false, dst, local_slot(idx)),
                     .on_stack => cfo.aritrm(.add, false, dst, stack_slot(self.val_stack_level)),
+                };
+            },
+            .i32_mul => {
+                const dst, const src = try self.pop_as_reg_virt(false);
+                try switch (src) {
+                    .imm => |val| cfo.imulrri(false, dst, dst, val.i32),
+                    .reg => |reg| cfo.imulrr(false, dst, reg),
+                    .local => |idx| cfo.imulrm(false, dst, local_slot(idx)),
+                    .on_stack => cfo.imulrm(false, dst, stack_slot(self.val_stack_level)),
                 };
             },
             // TODO: need to cleanup ForkLift before we can structurize this.

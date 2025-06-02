@@ -115,8 +115,16 @@ pub fn main() !u8 {
         }
         _ = try t.expect(.RightParen);
 
-        const sym = try mod.lookup_export(name) orelse
+        const sym = try mod.lookup_export(name) orelse {
+            if (kind == .invoke and std.mem.eql(u8, name, "meta_compile")) {
+                if (params.items.len != 2) return error.InvalidMeta;
+                const func = params.items[0].u32();
+                const blk = params.items[1].u32();
+                try mod.dbg_compile(func, blk);
+                continue; // NB: only syntax safe with invoke!
+            }
             return error.NotFound;
+        };
 
         if (sym.kind != .func) return error.Wattaf;
 
