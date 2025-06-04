@@ -4,13 +4,20 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const llvm = b.option(bool, "llvm", "use llvm");
+    const dev_forklift = b.option(bool, "dev_forklift", "use llvm") orelse false;
 
     const wasm_shelf = b.addModule("wasm_shelf", .{
         .root_source_file = b.path("src/wasm_shelf.zig"),
     });
 
-    const forklift = b.dependency("forklift", .{});
-    wasm_shelf.addImport("forklift", forklift.module("forklift"));
+    const forklift_dep = b.dependency("forklift", .{});
+    // TODO: this is a ugly hack. need a standard pattern for developing
+    // two packages togheter. or maybe this is a usecase where
+    // one repo should just GLOM both packages?
+    const forklift = if (dev_forklift) b.addModule("forklift", .{
+        .root_source_file = b.path("../forklift/src/forklift.zig"),
+    }) else forklift_dep.module("forklift");
+    wasm_shelf.addImport("forklift", forklift);
 
     const exe = b.addExecutable(.{
         .name = "wasm_run",
