@@ -7,6 +7,8 @@ const StackValue = wasm_shelf.StackValue;
 const Instance = wasm_shelf.Instance;
 const clap = @import("clap");
 
+pub var options: @import("wasm_shelf").forklift.DebugOptions = .{};
+
 const params = clap.parseParamsComptime(
     \\-h, --help             Display this help and exit.
     \\-f, --func <str>       call function
@@ -14,6 +16,7 @@ const params = clap.parseParamsComptime(
     \\-s, --stats <str>      Dump some stats on exit
     \\-d, --disasm <str>     Disassemble block
     \\-c, --compile <str>... Compile block using ThunderLightning
+    \\-m, --heavy            Compile entire module using HeavyMachineTool
     \\--stdin <str>          override wasi stdin
     \\<str>
     \\
@@ -62,6 +65,14 @@ pub fn main() !u8 {
         return 0;
     }
 
+    if (p.args.heavy > 0) {
+        var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+        var in: Instance = try .init(&mod, null);
+        defer in.deinit();
+        try tool.compileInstance(&in);
+        return 0;
+    }
+
     for (p.args.compile) |str| {
         const func, const blk = try blkspec(str);
         try mod.dbg_compile(func, blk);
@@ -71,7 +82,7 @@ pub fn main() !u8 {
         _ = func;
         const callname = std.mem.span(argv[2]);
 
-        var in = try Instance.init(&mod, null);
+        var in: Instance = try .init(&mod, null);
         defer in.deinit();
 
         const sym = try mod.lookup_export(callname) orelse {
