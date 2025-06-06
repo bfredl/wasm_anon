@@ -74,6 +74,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
+    defer ir.debug_print(); // show what we got when it ends
+
     while (true) {
         // const pos = r.pos;
         const inst = try r.readOpCode();
@@ -84,6 +86,4 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
         }
     }
-
-    ir.debug_print();
 }
