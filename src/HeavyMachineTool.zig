@@ -32,6 +32,14 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     }
 }
 
+fn wide(typ: defs.ValType) !bool {
+    return switch (typ) {
+        .i32 => false,
+        .i64 => true,
+        else => error.NotImplemented,
+    };
+}
+
 pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function) !void {
     _ = id;
     const ir = &self.flir;
@@ -76,10 +84,23 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     defer ir.debug_print(); // show what we got when it ends
 
+    var value_stack: std.ArrayList(u16) = .init(in.mod.allocator);
+    defer value_stack.deinit();
+
     while (true) {
         // const pos = r.pos;
         const inst = try r.readOpCode();
         switch (inst) {
+            .i32_const => {
+                const val = try r.readLeb(i32);
+                try value_stack.append(try ir.const_uint(@bitCast(@as(i64, val))));
+            },
+            .local_set => {
+                const idx = try r.readu();
+                // const w = try wide(f.local_types[idx]);
+                const src = value_stack.pop().?;
+                try ir.putvar(node, locals[idx], src);
+            },
             else => {
                 dbg("inst {s} TBD, aborting!\n", .{@tagName(inst)});
                 return error.NotImplemented;
