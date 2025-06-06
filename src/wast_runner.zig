@@ -22,10 +22,14 @@ pub fn main() !u8 {
     var maxerr: u32 = 0;
     var specname: ?[]u8 = null;
 
+    var machine_tool = false;
+
     if (argv.len >= 4) {
         specname = std.mem.span(argv[2]);
         const errarg = std.mem.span(argv[3]);
         maxerr = try std.fmt.parseInt(@TypeOf(maxerr), errarg, 10);
+    } else if (argv.len == 3 and std.mem.eql(u8, std.mem.span(argv[2]), "--heavy")) {
+        machine_tool = true;
     }
 
     var t: Tokenizer = .{ .str = buf };
@@ -79,6 +83,13 @@ pub fn main() !u8 {
 
             mod = try .parse(mod_code, allocator);
             in = try .init(&mod, &imports);
+
+            if (machine_tool) {
+                var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+                try tool.compileInstance(&in);
+                return 1;
+            }
+
             did_mod = true;
             continue;
         } else {

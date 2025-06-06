@@ -11,6 +11,9 @@ call_count: Counter = 0,
 
 local_types: []defs.ValType = &.{},
 
+// for optimization. in case there is more than 64 args this will contain false positives..
+args_mut: u64 = 0,
+
 // need not be strict but can be an over-estimate
 val_stack_max_height: u16 = 0,
 const Counter = u64;
@@ -179,6 +182,9 @@ pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !voi
                 const idx = try r.readu();
                 dbg(" {}", .{idx});
                 if (idx >= n_locals) return error.InvalidFormat;
+                if (inst != .local_get and idx < self.n_params) {
+                    self.args_mut |= @as(u64, 1) << @as(u6, @intCast(idx & 63));
+                }
                 if (inst == .local_get) {
                     val_stack_level += 1;
                 } else if (inst == .local_set) {

@@ -10,6 +10,8 @@ const std = @import("std");
 const X86Asm = forklift.X86Asm;
 const IPReg = X86Asm.IPReg;
 const FLIR = forklift.FLIR;
+const dbg = std.debug.print;
+const defs = @import("./defs.zig");
 
 const HeavyMachineTool = @This();
 flir: FLIR,
@@ -35,10 +37,53 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const ir = &self.flir;
     const gpa = in.mod.allocator;
     _ = try f.ensure_parsed(in.mod);
-    self.flir.reinit();
-    var locals = try gpa.alloc(u32, f.local_types.len);
+    ir.reinit();
+    var locals = try gpa.alloc(u16, f.local_types.len);
+    const node = try ir.addNode();
+    // I think FLIR can require all args to be first..
     for (0..f.n_params) |i| {
         locals[i] = try ir.arg();
     }
+    if (f.args_mut != 0) {
+        for (0..f.n_params) |i| {
+            const mut = (f.args_mut & (@as(u64, 1) << @as(u6, @intCast((i & 63))))) != 0;
+            if (mut) {
+                const src = locals[i];
+                locals[i] = try ir.variable(.{ .intptr = .dword });
+                try ir.putvar(node, locals[i], src);
+            }
+        }
+    }
+
+    // var c_ip: u32 = 0;
+    var r = in.mod.reader_at(f.codeoff);
+
+    {
+        var i = f.n_params;
+        const n_local_defs = try r.readu();
+        for (0..n_local_defs) |_| {
+            const n_decl = try r.readu();
+            const typ: defs.ValType = @enumFromInt(try r.readByte());
+            const init_val: defs.StackValue = defs.StackValue.default(typ) orelse return error.InvalidFormat;
+            if (typ != .i32) return error.NotImplemented;
+            for (0..n_decl) |_| {
+                locals[i] = try ir.variable(.{ .intptr = .dword });
+                try ir.putvar(node, locals[i], try ir.const_uint(init_val.u32()));
+                i += 1;
+            }
+        }
+    }
+
+    while (true) {
+        // const pos = r.pos;
+        const inst = try r.readOpCode();
+        switch (inst) {
+            else => {
+                dbg("inst {s} TBD, aborting!\n", .{@tagName(inst)});
+                return error.NotImplemented;
+            },
+        }
+    }
+
     ir.debug_print();
 }
