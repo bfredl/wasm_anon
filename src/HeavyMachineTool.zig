@@ -47,7 +47,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     _ = try f.ensure_parsed(in.mod);
     ir.reinit();
     var locals = try gpa.alloc(u16, f.local_types.len);
-    const node = try ir.addNode();
+    var node = try ir.addNode();
     // I think FLIR can require all args to be first..
     for (0..f.n_params) |i| {
         locals[i] = try ir.arg();
@@ -63,7 +63,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
-    // var c_ip: u32 = 0;
+    var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
 
     {
@@ -87,6 +87,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var value_stack: std.ArrayList(u16) = .init(in.mod.allocator);
     defer value_stack.deinit();
 
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16 }) = .init(in.mod.allocator);
+    defer label_stack.deinit();
+
     while (true) {
         // const pos = r.pos;
         const inst = try r.readOpCode();
@@ -97,9 +100,28 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
             .local_set => {
                 const idx = try r.readu();
-                // const w = try wide(f.local_types[idx]);
                 const src = value_stack.pop().?;
                 try ir.putvar(node, locals[idx], src);
+            },
+            .local_get => {
+                const idx = try r.readu();
+                const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
+                try value_stack.append(val);
+            },
+            .i32_mul => {
+                const rhs = value_stack.pop().?;
+                const lhs = value_stack.pop().?;
+                const res = try ir.ibinop(node, .dword, .mul, lhs, rhs);
+                try value_stack.append(res);
+            },
+            .loop => {
+                const typ = try r.blocktype();
+                const n_args, const n_results = try typ.arity(in.mod);
+                if (n_args != 0 or n_results != 0) return error.NotImplemented;
+                c_ip += 1;
+                const entry = try ir.addNodeAfter(node);
+                node = entry;
+                try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry });
             },
             else => {
                 dbg("inst {s} TBD, aborting!\n", .{@tagName(inst)});
