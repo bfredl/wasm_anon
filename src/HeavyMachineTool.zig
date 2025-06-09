@@ -103,15 +103,20 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const src = value_stack.pop().?;
                 try ir.putvar(node, locals[idx], src);
             },
+            .local_tee => {
+                const idx = try r.readu();
+                const src = value_stack.items[value_stack.items.len - 1];
+                try ir.putvar(node, locals[idx], src);
+            },
             .local_get => {
                 const idx = try r.readu();
                 const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
                 try value_stack.append(val);
             },
-            .i32_mul => {
+            .i32_mul, .i32_add => {
                 const rhs = value_stack.pop().?;
                 const lhs = value_stack.pop().?;
-                const res = try ir.ibinop(node, .dword, .mul, lhs, rhs);
+                const res = try ir.ibinop(node, .dword, if (inst == .i32_mul) .mul else .add, lhs, rhs);
                 try value_stack.append(res);
             },
             .loop => {
