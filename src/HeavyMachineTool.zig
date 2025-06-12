@@ -82,13 +82,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
-    defer ir.debug_print(); // show what we got when it ends
-
     var value_stack: std.ArrayList(u16) = .init(in.mod.allocator);
     defer value_stack.deinit();
 
     var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16 }) = .init(in.mod.allocator);
     defer label_stack.deinit();
+
+    defer ir.debug_print(); // show what we got when it ends
 
     while (true) {
         // const pos = r.pos;
@@ -127,6 +127,29 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
                 try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry });
+            },
+            .i32_ne => {
+                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                if (peekinst != .br_if) return error.NotImplemented;
+                _ = try r.readByte();
+                const rhs = value_stack.pop().?;
+                const lhs = value_stack.pop().?;
+                const label = try r.readu();
+                if (label > label_stack.items.len - 1) return error.InternalCompilerError;
+                const target = label_stack.items[label_stack.items.len - label - 1];
+                _ = try ir.icmp(node, .dword, .neq, lhs, rhs);
+                try ir.addLink(node, 1, target.ir_target); // branch taken
+                node = try ir.addNodeAfter(node);
+            },
+            .end => {
+                if (label_stack.pop()) |label| {
+                    _ = label; // in case of a blk, patch up!
+                } else {
+                    if (f.n_res != 1) return error.NotImplemented;
+                    if (value_stack.items.len != 1) return error.InternalCompilerError;
+                    try ir.ret(node, .{ .intptr = .dword }, value_stack.items[0]);
+                    break;
+                }
             },
             else => {
                 dbg("inst {s} TBD, aborting!\n", .{@tagName(inst)});
