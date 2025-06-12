@@ -88,7 +88,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16 }) = .init(in.mod.allocator);
     defer label_stack.deinit();
 
-    defer ir.debug_print(); // show what we got when it ends
+    errdefer ir.debug_print(); // show what we got when it ends
 
     while (true) {
         // const pos = r.pos;
@@ -157,4 +157,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
         }
     }
+    ir.debug_print();
+
+    try ir.test_analysis(FLIR.X86ABI, true);
+    ir.print_intervals();
+    ir.debug_print();
 }
