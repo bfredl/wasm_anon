@@ -5,6 +5,8 @@ const util = @import("./util.zig");
 const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
 
+pub var options: @import("wasm_shelf").forklift.DebugOptions = .{};
+
 const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const", @"ref.null", @"ref.extern" };
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
