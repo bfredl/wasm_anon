@@ -16,6 +16,9 @@ args_mut: u64 = 0,
 
 // need not be strict but can be an over-estimate
 val_stack_max_height: u16 = 0,
+
+// index into CFOModule.objs if using HeavyMachineTool
+hmt_object: ?u32 = null,
 const Counter = u64;
 
 const std = @import("std");

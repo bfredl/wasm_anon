@@ -4,34 +4,45 @@ const util = @import("./util.zig");
 
 const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
+const clap = @import("clap");
 
 pub var options: @import("wasm_shelf").forklift.DebugOptions = .{};
 
+const params_def = clap.parseParamsComptime(
+    \\-h, --help             Display this help and exit.
+    \\-f, --specname <str>   name
+    \\-e, --errors <str>     expected number of errors
+    \\-m, --heavy            Compile entire module using HeavyMachineTool
+    \\--stdin <str>          override wasi stdin
+    \\<str>
+    \\
+);
 const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const", @"ref.null", @"ref.extern" };
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const argv = std.os.argv;
-    if (argv.len < 2) {
-        dbg("wast_runner {{test_file.wast}}\n", .{});
-        return 1;
-    }
-    const filearg = std.mem.span(argv[1]);
+    var diag = clap.Diagnostic{};
+    const p = clap.parse(clap.Help, &params_def, clap.parsers.default, .{
+        .diagnostic = &diag,
+        .allocator = gpa.allocator(),
+    }) catch |err| {
+        // Report useful error and exit.
+        diag.report(std.io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+
+    const filearg = p.positionals[0] orelse @panic("usage");
     const buf = try util.readall(allocator, filearg);
     defer allocator.free(buf);
 
     var maxerr: u32 = 0;
-    var specname: ?[]u8 = null;
+    const specname = p.args.specname;
 
-    var machine_tool = false;
+    const machine_tool: bool = p.args.heavy > 0;
 
-    if (argv.len >= 4) {
-        specname = std.mem.span(argv[2]);
-        const errarg = std.mem.span(argv[3]);
+    if (p.args.errors) |errarg| {
         maxerr = try std.fmt.parseInt(@TypeOf(maxerr), errarg, 10);
-    } else if (argv.len == 3 and std.mem.eql(u8, std.mem.span(argv[2]), "--heavy")) {
-        machine_tool = true;
     }
 
     var t: Tokenizer = .{ .str = buf };

@@ -72,6 +72,7 @@ pub fn build(b: *std.Build) void {
     if (llvm) |val| wast_exe.use_llvm = val;
 
     wast_exe.root_module.addImport("wasm_shelf", wasm_shelf);
+    wast_exe.root_module.addImport("clap", clap.module("clap"));
     b.installArtifact(wast_exe);
 
     const wast_run_cmd = b.addRunArtifact(wast_exe);
@@ -138,7 +139,9 @@ pub fn build(b: *std.Build) void {
 fn add_spectest(b: *std.Build, test_step: *std.Build.Step, wast_exe: *std.Build.Step.Compile, file: std.Build.LazyPath, name: []const u8, fail: u32) void {
     const spec_step = b.addRunArtifact(wast_exe);
     spec_step.addFileArg(file);
-    spec_step.addArg(name);
-    spec_step.addArg(b.fmt("{}", .{fail}));
+    spec_step.addArgs(&.{ "--specname", name });
+    if (fail > 0) {
+        spec_step.addArgs(&.{ "--errors", b.fmt("{}", .{fail}) });
+    }
     test_step.dependOn(&spec_step.step);
 }

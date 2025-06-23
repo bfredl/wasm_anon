@@ -12,6 +12,7 @@ pub var options: @import("wasm_shelf").forklift.DebugOptions = .{};
 const params = clap.parseParamsComptime(
     \\-h, --help             Display this help and exit.
     \\-f, --func <str>       call function
+    \\-a, --arg <str>        int argument (TODO: restructure this)
     \\-i, --inspect          inspect imports and exports
     \\-s, --stats <str>      Dump some stats on exit
     \\-d, --disasm <str>     Disassemble block
@@ -33,7 +34,6 @@ pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const argv = std.os.argv;
     var diag = clap.Diagnostic{};
     var p = clap.parse(clap.Help, &params, clap.parsers.default, .{
         .diagnostic = &diag,
@@ -79,8 +79,7 @@ pub fn main() !u8 {
     }
 
     if (p.args.func) |func| {
-        _ = func;
-        const callname = std.mem.span(argv[2]);
+        const callname = func;
 
         var in: Instance = try .init(&mod, null);
         defer in.deinit();
@@ -96,11 +95,11 @@ pub fn main() !u8 {
             return 1;
         }
 
-        const num = try std.fmt.parseInt(i32, std.mem.span(argv[3]), 10);
+        const num = try std.fmt.parseInt(i32, p.args.arg orelse @panic("gib --arg"), 10);
         var res: [1]StackValue = undefined;
         const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res, true);
         if (n_res != 1) dbg("TODO: n_res\n", .{});
-        dbg("{s}({}) == {}\n", .{ std.mem.span(argv[2]), num, res[0].i32 });
+        dbg("{s}({}) == {}\n", .{ callname, num, res[0].i32 });
     } else {
         const status = try wasi_run(&mod, allocator, @ptrCast(p.args.stdin));
         return @intCast(@min(status, 255));

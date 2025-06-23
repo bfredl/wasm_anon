@@ -30,6 +30,8 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     for (0.., mod.funcs_internal) |i, *f| {
         try self.compileFunc(in, i, f);
     }
+    try forklift.X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
+    try self.mod.code.finalize();
 }
 
 fn wide(typ: defs.ValType) !bool {
@@ -162,4 +164,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try ir.test_analysis(FLIR.X86ABI, true);
     ir.print_intervals();
     ir.debug_print();
+
+    // TODO: abstraction
+    const target = try forklift.codegen_x86_64(ir, &self.mod.code, false);
+    f.hmt_object = @intCast(self.mod.objs.items.len);
+    try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
 }
