@@ -94,10 +94,12 @@ pub fn main() !u8 {
             dbg("not a function :(\n", .{});
             return 1;
         }
+        var interpreter: wasm_shelf.Interpreter = .init(allocator);
+        defer interpreter.deinit();
 
         const num = try std.fmt.parseInt(i32, p.args.arg orelse @panic("gib --arg"), 10);
         var res: [1]StackValue = undefined;
-        const n_res = try in.execute(sym.idx, &.{.{ .i32 = num }}, &res, true);
+        const n_res = try interpreter.execute(&in, sym.idx, &.{.{ .i32 = num }}, &res, true);
         if (n_res != 1) dbg("TODO: n_res\n", .{});
         dbg("{s}({}) == {}\n", .{ callname, num, res[0].i32 });
     } else {
@@ -131,11 +133,14 @@ fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]c
     var in = try wasm_shelf.Instance.init(mod, &imports);
     defer in.deinit();
 
+    var interpreter: wasm_shelf.Interpreter = .init(allocator);
+    defer interpreter.deinit();
+
     const sym = try mod.lookup_export("_start") orelse @panic("_start not found");
 
     if (sym.kind != .func) @panic("_start not a function :(");
 
-    _ = in.execute(sym.idx, &.{}, &.{}, true) catch |err| {
+    _ = interpreter.execute(&in, sym.idx, &.{}, &.{}, true) catch |err| {
         if (err == error.WASMTrap) {
             if (state.exit_status) |status| {
                 // TRAP was sent by wasi_proc_exit

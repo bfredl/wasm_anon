@@ -56,6 +56,12 @@ pub fn deinit(self: *Interpreter) void {
     self.frames.deinit();
 }
 
+pub fn assert_clean(self: *Interpreter) !void {
+    if (self.values.items.len > 0) return error.InvalidState;
+    if (self.labels.items.len > 0) return error.InvalidState;
+    if (self.frames.items.len > 0) return error.InvalidState;
+}
+
 pub fn nvals(self: *Interpreter) u32 {
     return @intCast(self.values.items.len - self.frame_ptr);
 }
@@ -139,14 +145,31 @@ pub fn init_locals(stack: *Interpreter, r: *Reader) !void {
     }
 }
 
+pub fn execute(stack: *Interpreter, in: *Instance, idx: u32, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
+    if (idx < in.mod.n_funcs_import or idx >= in.mod.n_imports + in.mod.funcs_internal.len) return error.OutOfRange;
+    const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
+
+    return stack.execute_fn(func, in, params, ret, logga);
+}
+
 // TODO: this should be made flexible enough to allow ie a nested callback from a a host function
 // TODO: use stack.values to pass args/ret ?
-pub fn execute(stack: *Interpreter, self: *Function, mod: *Module, in: *Instance, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
+pub fn execute_fn(stack: *Interpreter, self: *Function, in: *Instance, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
+    const mod = in.mod;
     const c = try self.ensure_parsed(mod);
 
     // NB: in the spec all locals are bundled into a "frame" object as a single
     // entry on the stack. We do a little unbundling to keep stack object sizes
     // pretty much homogenous.
+
+    // TODO: this is not yet re-entrant
+    if (stack.values.items.len > 0) return error.NotImplemented;
+    defer {
+        // TODO: reset only for WASMTrap, otherwise it should just add-up
+        stack.values.items.len = 0;
+        stack.labels.items.len = 0;
+        stack.frames.items.len = 0;
+    }
 
     stack.locals_ptr = @intCast(stack.values.items.len);
     if (params.len != self.n_params or ret.len < self.n_res) return error.InvalidArgument;

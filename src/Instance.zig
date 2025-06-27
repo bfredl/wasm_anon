@@ -75,15 +75,6 @@ pub fn init_func_table(in: *Instance, len: u32) !void {
     @memset(in.funcref_table, defs.funcref_nil); // null
 }
 
-pub fn execute(self: *Instance, idx: u32, args: []const defs.StackValue, ret: []defs.StackValue, logga: bool) !u32 {
-    if (idx < self.mod.n_funcs_import or idx >= self.mod.n_imports + self.mod.funcs_internal.len) return error.OutOfRange;
-    const func = &self.mod.funcs_internal[idx - self.mod.n_funcs_import];
-
-    var stack: Interpreter = .init(self.mod.allocator);
-    defer stack.deinit();
-    return stack.execute(func, self.mod, self, args, ret, logga);
-}
-
 pub fn mem_get_bytes(self: *Instance, pos: u32, len: u32) ![]u8 {
     if (pos + len > self.mem.items.len) return error.WASMTrap;
     return self.mem.items[pos..][0..len];

@@ -41,6 +41,14 @@ pub fn main() !u8 {
 
     const machine_tool: bool = p.args.heavy > 0;
 
+    var interpreter: wasm_shelf.Interpreter = .init(allocator);
+    defer interpreter.deinit();
+
+    var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+
+    var stack: wasm_shelf.Interpreter = .init(allocator);
+    defer stack.deinit();
+
     if (p.args.errors) |errarg| {
         maxerr = try std.fmt.parseInt(@TypeOf(maxerr), errarg, 10);
     }
@@ -98,9 +106,7 @@ pub fn main() !u8 {
             in = try .init(&mod, &imports);
 
             if (machine_tool) {
-                var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
                 try tool.compileInstance(&in);
-                return 1;
             }
 
             did_mod = true;
@@ -200,8 +206,11 @@ pub fn main() !u8 {
             continue;
         }
 
+        if (machine_tool) return error.NotImplemented;
+
         var res: [max_res]StackValue = undefined;
-        const maybe_n_res = in.execute(sym.idx, params.items, &res, false) catch |err| fail: {
+        try interpreter.assert_clean();
+        const maybe_n_res = interpreter.execute(&in, sym.idx, params.items, &res, false) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
                     dbg("NYI\n", .{});

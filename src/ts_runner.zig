@@ -67,6 +67,9 @@ pub fn main() !void {
     var in = try Instance.init(&mod, &imports);
     defer in.deinit();
 
+    var interpreter: wasm_shelf.Interpreter = .init(allocator);
+    defer interpreter.deinit();
+
     // TODO: check how the order is really defined, this is just guesswork on the major scale
     const initializers = &[_][]const u8{ "__wasm_call_ctors", "__wasm_apply_data_relocs", "_initialize" };
 
@@ -74,7 +77,7 @@ pub fn main() !void {
         if (try mod.lookup_export(init)) |sym| {
             dbg("INIT: {s}\n", .{init});
             if (sym.kind != .func) @panic("nej");
-            _ = try in.execute(sym.idx, &.{}, &.{}, true);
+            _ = try interpreter.execute(&in, sym.idx, &.{}, &.{}, true);
         }
     }
 
@@ -83,7 +86,7 @@ pub fn main() !void {
     const sym = try mod.lookup_export(lang_func_name.items) orelse @panic("no such lang");
     if (sym.kind != .func) @panic("nej");
     var res: [1]StackValue = undefined;
-    _ = try in.execute(sym.idx, &.{}, &res, true);
+    _ = try interpreter.execute(&in, sym.idx, &.{}, &res, true);
 
     dbg("HERE IS THE RESULT: {}\n", .{res[0].i32});
 
