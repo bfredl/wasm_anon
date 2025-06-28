@@ -27,10 +27,11 @@ pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
 // why an Instance instead of a module? why not? why ask?
 pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     const mod = in.mod;
+    try mod.mark_exports(); // or already??
     for (0.., mod.funcs_internal) |i, *f| {
         try self.compileFunc(in, i, f);
     }
-    try forklift.X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
+    try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
     try self.mod.code.finalize();
 }
 
@@ -183,4 +184,47 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const target = try forklift.codegen_x86_64(ir, &self.mod.code, false);
     f.hmt_object = @intCast(self.mod.objs.items.len);
     try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
+
+    if (!f.exported) return;
+
+    const max_args = 2;
+    if (f.n_params > max_args) return error.NotImplemented;
+    var local_types_buf: [max_args]defs.ValType = undefined;
+    const ret_type = try in.mod.type_params(f.typeidx, &local_types_buf);
+    const local_types = local_types_buf[0..f.n_params];
+
+    const trampolin_target = self.mod.code.get_target();
+    // trampolin,  *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue) u32;
+    // arg 1: RDI = mem
+    // arg2 : RSI = mem_size
+    // arg3 : RDX = params
+    // arg4: RCX = ret
+    var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
+    if (ret_type) |_| try cfo.push(.rcx);
+
+    // TODO: offset with mem when we start using it
+    const ireg: [max_args]IPReg = .{ .rdi, .rsi };
+
+    for (local_types, 0..) |t, i| {
+        const w = switch (t) {
+            .i32 => false,
+            .i64 => true,
+            else => return error.NotImplemented,
+        };
+        try cfo.movrm(w, ireg[i], X86Asm.a(.rdx).o(@intCast(@sizeOf(defs.StackValue) * i)));
+    }
+    try cfo.call_rel(target);
+    if (ret_type) |typ| {
+        try cfo.pop(.rcx);
+        const w = switch (typ) {
+            .i32 => false,
+            .i64 => true,
+            else => return error.NotImplemented,
+        };
+        try cfo.movmr(w, X86Asm.a(.rcx), .rax); // only one
+    }
+    try cfo.ret();
+
+    f.hmt_trampoline = @intCast(self.mod.objs.items.len);
+    try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = trampolin_target } }, .name = null });
 }

@@ -46,7 +46,7 @@ pub fn main() !u8 {
 
     var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
 
-    const engine: wasm_shelf.Engine = .{ .interpreter = &interpreter };
+    const engine: wasm_shelf.Engine = if (machine_tool) .{ .heavy = &tool } else .{ .interpreter = &interpreter };
 
     if (p.args.errors) |errarg| {
         maxerr = try std.fmt.parseInt(@TypeOf(maxerr), errarg, 10);
@@ -105,6 +105,7 @@ pub fn main() !u8 {
             in = try .init(&mod, &imports);
 
             if (machine_tool) {
+                if (did_mod) return error.NotImplemented; // need to reinit HMT for new module.
                 try tool.compileInstance(&in);
             }
 
@@ -204,8 +205,6 @@ pub fn main() !u8 {
             dbg("TODO: exhaust\n", .{});
             continue;
         }
-
-        if (machine_tool) return error.NotImplemented;
 
         var res: [max_res]StackValue = undefined;
         try interpreter.assert_clean();

@@ -252,6 +252,20 @@ pub fn dbg_exports(self: *Module) !void {
     }
 }
 
+pub fn mark_exports(self: *Module) !void {
+    var r = self.reader_at(self.export_off);
+    const len = try r.readu();
+    for (0..len) |_| {
+        _ = try r.readName();
+        const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
+        const idx = try r.readu();
+        if (kind == .func and idx >= self.n_funcs_import) {
+            // TODO: reexport of imports allowed??
+            self.funcs_internal[idx - self.n_funcs_import].exported = true;
+        }
+    }
+}
+
 pub const Export = struct { kind: defs.ImportExportKind, idx: u32 };
 
 pub fn lookup_export(self: *Module, name: []const u8) !?Export {
@@ -400,7 +414,7 @@ pub fn type_arity(self: *const Module, type_idx: u32) !struct { u16, u16 } {
     return .{ n_params, n_res };
 }
 
-pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType) !void {
+pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType) !?defs.ValType {
     var r = self.reader_at(self.types[type_idx]);
     const tag = try r.readByte();
     if (tag != 0x60) return error.InvalidFormat;
@@ -408,7 +422,9 @@ pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType
     for (0..n_params) |i| {
         out_types[i] = @enumFromInt(try r.readByte());
     }
-    // TODO: chain reading of res vec!
+    // TODO: multiple return values
+    const n_results: u16 = @intCast(try r.readu());
+    return if (n_results > 0) @enumFromInt(try r.readByte()) else null;
 }
 
 pub fn table_section(self: *Module, in: *Instance) !void {

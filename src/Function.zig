@@ -4,6 +4,7 @@ n_params: u32 = undefined,
 n_res: u32 = undefined,
 codeoff: u32 = undefined,
 control: ?[]ControlItem = null,
+exported: bool = false,
 
 name: ?[]const u8 = null,
 
@@ -57,7 +58,7 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
     const n_local_defs = try r.readu();
 
     var local_types: std.ArrayList(defs.ValType) = try .initCapacity(mod.allocator, self.n_params + n_local_defs);
-    try mod.type_params(self.typeidx, local_types.addManyAsSliceAssumeCapacity(self.n_params));
+    _ = try mod.type_params(self.typeidx, local_types.addManyAsSliceAssumeCapacity(self.n_params));
 
     for (0..n_local_defs) |_| {
         const n_decl = try r.readu();
