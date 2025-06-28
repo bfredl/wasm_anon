@@ -36,7 +36,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
 }
 
 const StackValue = defs.StackValue;
-const TrampolineFn = *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue) u32;
+const TrampolineFn = *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue) callconv(.C) u32;
 pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
     if (idx < in.mod.n_funcs_import or idx >= in.mod.n_imports + in.mod.funcs_internal.len) return error.OutOfRange;
     const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
@@ -46,7 +46,8 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
 
     const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
     const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr);
-    return status;
+    if (status != 0) return error.WASMTrap;
+    return func.n_res;
 }
 
 fn wide(typ: defs.ValType) !bool {
@@ -200,6 +201,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     // arg3 : RDX = params
     // arg4: RCX = ret
     var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
+    const frame = true;
+    // try cfo.trap();
+    if (frame) try cfo.enter();
     if (ret_type) |_| try cfo.push(.rcx);
 
     // TODO: offset with mem when we start using it
@@ -223,6 +227,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         };
         try cfo.movmr(w, X86Asm.a(.rcx), .rax); // only one
     }
+    try cfo.zero(.rax); // TODO: error status
+    if (frame) try cfo.leave();
     try cfo.ret();
 
     f.hmt_trampoline = @intCast(self.mod.objs.items.len);
