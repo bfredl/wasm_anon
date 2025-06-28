@@ -6,3 +6,4 @@ pub const page_size = @import("./defs.zig").page_size;
 pub const Interpreter = @import("./Interpreter.zig");
 pub const HeavyMachineTool = @import("./HeavyMachineTool.zig");
 pub const forklift = @import("forklift");
+pub const Engine = Instance.Engine;

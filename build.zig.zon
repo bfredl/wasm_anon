@@ -24,8 +24,8 @@
             .hash = "clap-0.10.0-oBajB434AQBDh-Ei3YtoKIRxZacVPF1iSwp3IX_ZB8f0",
         },
         .forklift = .{
-            .url = "git+https://github.com/bfredl/forklift#8390e5c95ff990bfa9d68a366a972a542bf0841c",
-            .hash = "forklift-0.0.0-Dkn_kbRsAwCB5eAavAzvvP-RO9-VdsCsI9EADVmD96lS",
+            .url = "git+https://github.com/bfredl/forklift#0a2d45064ce985c874147e7a5a90688f79dcfe17",
+            .hash = "forklift-0.0.0-Dkn_kZptAwBUwxIzhX413JeYH51W4j5eUixAm_ymFEVO",
         },
     },
     .paths = .{

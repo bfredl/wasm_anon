@@ -19,6 +19,8 @@ val_stack_max_height: u16 = 0,
 
 // index into CFOModule.objs if using HeavyMachineTool
 hmt_object: ?u32 = null,
+// index for wrapper function, built for all exports
+hmt_trampoline: ?u32 = null,
 const Counter = u64;
 
 const std = @import("std");

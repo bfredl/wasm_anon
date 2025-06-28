@@ -78,6 +78,10 @@ pub fn main() !u8 {
         try mod.dbg_compile(func, blk);
     }
 
+    var interpreter: wasm_shelf.Interpreter = .init(allocator);
+    defer interpreter.deinit();
+    const engine: wasm_shelf.Engine = .{ .interpreter = &interpreter };
+
     if (p.args.func) |func| {
         const callname = func;
 
@@ -94,16 +98,14 @@ pub fn main() !u8 {
             dbg("not a function :(\n", .{});
             return 1;
         }
-        var interpreter: wasm_shelf.Interpreter = .init(allocator);
-        defer interpreter.deinit();
 
         const num = try std.fmt.parseInt(i32, p.args.arg orelse @panic("gib --arg"), 10);
         var res: [1]StackValue = undefined;
-        const n_res = try interpreter.execute(&in, sym.idx, &.{.{ .i32 = num }}, &res, true);
+        const n_res = try in.execute_either(engine, sym.idx, &.{.{ .i32 = num }}, &res, true);
         if (n_res != 1) dbg("TODO: n_res\n", .{});
         dbg("{s}({}) == {}\n", .{ callname, num, res[0].i32 });
     } else {
-        const status = try wasi_run(&mod, allocator, @ptrCast(p.args.stdin));
+        const status = try wasi_run(engine, &mod, allocator, @ptrCast(p.args.stdin));
         return @intCast(@min(status, 255));
     }
     return 0;
@@ -114,7 +116,7 @@ const WASIState = struct {
     exit_status: ?u32 = null,
 };
 
-fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8) !u32 {
+fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8) !u32 {
     if (stdin) |path| {
         const fd = try std.posix.openZ(path, .{ .ACCMODE = .RDONLY }, 0);
         try std.posix.dup2(fd, 0);
@@ -133,14 +135,11 @@ fn wasi_run(mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]c
     var in = try wasm_shelf.Instance.init(mod, &imports);
     defer in.deinit();
 
-    var interpreter: wasm_shelf.Interpreter = .init(allocator);
-    defer interpreter.deinit();
-
     const sym = try mod.lookup_export("_start") orelse @panic("_start not found");
 
     if (sym.kind != .func) @panic("_start not a function :(");
 
-    _ = interpreter.execute(&in, sym.idx, &.{}, &.{}, true) catch |err| {
+    _ = in.execute_either(engine, sym.idx, &.{}, &.{}, true) catch |err| {
         if (err == error.WASMTrap) {
             if (state.exit_status) |status| {
                 // TRAP was sent by wasi_proc_exit

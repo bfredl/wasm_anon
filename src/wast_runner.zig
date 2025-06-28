@@ -46,8 +46,7 @@ pub fn main() !u8 {
 
     var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
 
-    var stack: wasm_shelf.Interpreter = .init(allocator);
-    defer stack.deinit();
+    const engine: wasm_shelf.Engine = .{ .interpreter = &interpreter };
 
     if (p.args.errors) |errarg| {
         maxerr = try std.fmt.parseInt(@TypeOf(maxerr), errarg, 10);
@@ -210,7 +209,7 @@ pub fn main() !u8 {
 
         var res: [max_res]StackValue = undefined;
         try interpreter.assert_clean();
-        const maybe_n_res = interpreter.execute(&in, sym.idx, params.items, &res, false) catch |err| fail: {
+        const maybe_n_res = in.execute_either(engine, sym.idx, params.items, &res, false) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
                     dbg("NYI\n", .{});

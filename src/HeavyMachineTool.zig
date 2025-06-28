@@ -34,6 +34,20 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     try self.mod.code.finalize();
 }
 
+const StackValue = defs.StackValue;
+const TrampolineFn = *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue) u32;
+pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
+    if (idx < in.mod.n_funcs_import or idx >= in.mod.n_imports + in.mod.funcs_internal.len) return error.OutOfRange;
+    const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
+    _ = logga;
+
+    const trampoline_obj = func.hmt_trampoline orelse return error.NotImplemented;
+
+    const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
+    const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr);
+    return status;
+}
+
 fn wide(typ: defs.ValType) !bool {
     return switch (typ) {
         .i32 => false,
@@ -74,7 +88,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         for (0..n_local_defs) |_| {
             const n_decl = try r.readu();
             const typ: defs.ValType = @enumFromInt(try r.readByte());
-            const init_val: defs.StackValue = defs.StackValue.default(typ) orelse return error.InvalidFormat;
+            const init_val = StackValue.default(typ) orelse return error.InvalidFormat;
             if (typ != .i32) return error.NotImplemented;
             for (0..n_decl) |_| {
                 locals[i] = try ir.variable(.{ .intptr = .dword });

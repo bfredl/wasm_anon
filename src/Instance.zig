@@ -4,6 +4,7 @@ const Module = @import("./Module.zig");
 const defs = @import("./defs.zig");
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");
+const HeavyMachineTool = @import("./HeavyMachineTool.zig");
 const ImportTable = @import("./ImportTable.zig");
 const severe = std.debug.print;
 
@@ -92,4 +93,16 @@ pub fn memmove(self: *Instance, d: u32, s: u32, n: u32) !void {
     } else {
         std.mem.copyBackwards(u8, m[d..][0..n], m[s..][0..n]);
     }
+}
+
+pub const Engine = union(enum) {
+    interpreter: *Interpreter,
+    heavy: *HeavyMachineTool,
+};
+
+pub fn execute_either(in: *Instance, engine: Engine, idx: u32, params: []const defs.StackValue, ret: []defs.StackValue, logga: bool) !u32 {
+    return switch (engine) {
+        .interpreter => |i| i.execute(in, idx, params, ret, logga),
+        .heavy => |h| h.execute(in, idx, params, ret, logga),
+    };
 }
