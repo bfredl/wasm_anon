@@ -131,12 +131,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
                 try value_stack.append(val);
             },
-            .i32_mul, .i32_add => {
-                const rhs = value_stack.pop().?;
-                const lhs = value_stack.pop().?;
-                const res = try ir.ibinop(node, .dword, if (inst == .i32_mul) .mul else .add, lhs, rhs);
-                try value_stack.append(res);
-            },
             .loop => {
                 const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(in.mod);
@@ -169,9 +163,32 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     break;
                 }
             },
-            else => {
-                dbg("inst {s} TBD, aborting!\n", .{@tagName(inst)});
-                return error.NotImplemented;
+            // TODO: this leads to some bloat - some things like binops could be done as a bulk
+            inline else => |tag| {
+                const category = comptime defs.category(tag);
+                switch (category) {
+                    .i32_binop => {
+                        const rhs = value_stack.pop().?;
+                        const lhs = value_stack.pop().?;
+                        const flir_op: FLIR.IntBinOp = switch (tag) {
+                            .i32_add => .mul,
+                            .i32_sub => .sub,
+                            .i32_mul => .mul,
+                            // .i32_div_s => .div,
+                            // .i32_div_u => .div,
+                            else => {
+                                dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(category) });
+                                return error.NotImplemented;
+                            },
+                        };
+                        const res = try ir.ibinop(node, .dword, flir_op, lhs, rhs);
+                        try value_stack.append(res);
+                    },
+                    else => |cat| {
+                        dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(cat) });
+                        return error.NotImplemented;
+                    },
+                }
             },
         }
     }
