@@ -29,7 +29,16 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     const mod = in.mod;
     try mod.mark_exports(); // or already??
     for (0.., mod.funcs_internal) |i, *f| {
-        try self.compileFunc(in, i, f);
+        self.compileFunc(in, i, f) catch |e| switch (e) {
+            error.NotImplemented => {
+                if (f.hmt_error == null) {
+                    // fill in using error return trace?
+                    f.hmt_error = "??UNKNOWN";
+                }
+                continue; // ok, note the error
+            },
+            else => return e,
+        };
     }
     try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
     try self.mod.code.finalize();
@@ -41,6 +50,9 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
     if (idx < in.mod.n_funcs_import or idx >= in.mod.n_imports + in.mod.funcs_internal.len) return error.OutOfRange;
     const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
     _ = logga;
+    if (func.hmt_error) |err| {
+        dbg("ERROR: {s}\n", .{err});
+    }
 
     const trampoline_obj = func.hmt_trampoline orelse return error.NotImplemented;
 
@@ -111,6 +123,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     while (true) {
         // const pos = r.pos;
         const inst = try r.readOpCode();
+        f.hmt_error = @tagName(inst); // NOT LIKE THIS
         switch (inst) {
             .i32_const => {
                 const val = try r.readLeb(i32);
@@ -192,6 +205,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
         }
     }
+    f.hmt_error = null; // NOT LIKE THIS
     ir.debug_print();
 
     try ir.test_analysis(FLIR.X86ABI, true);

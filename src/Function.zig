@@ -22,6 +22,8 @@ val_stack_max_height: u16 = 0,
 hmt_object: ?u32 = null,
 // index for wrapper function, built for all exports
 hmt_trampoline: ?u32 = null,
+// NB: leaky lifeboat - no errors make no leaked error strings!
+hmt_error: ?[]const u8 = null,
 const Counter = u64;
 
 const std = @import("std");
