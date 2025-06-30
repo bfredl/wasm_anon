@@ -98,36 +98,39 @@ pub fn build(b: *std.Build) void {
     const run_spec_tests = b.step("spectest", "Run spec tests");
 
     if (maybe_spec_dep) |spec_dep| {
-        const upstream_specs = [_]struct { []const u8, u32 }{
-            .{ "i32", 0 },
-            .{ "i64", 0 },
-            .{ "f32", 2 },
-            .{ "f64", 2 },
-            .{ "f32_cmp", 0 },
-            .{ "f64_cmp", 0 },
-            .{ "labels", 0 },
-            .{ "local_get", 0 },
-            .{ "local_set", 0 },
-            .{ "local_tee", 0 },
-            .{ "br_if", 0 },
-            // .{ "loop", 0 },
-            .{ "conversions", 6 },
-            .{ "memory", 0 },
-            .{ "memory_copy", 0 },
-            .{ "memory_fill", 0 },
-            .{ "load", 0 },
-            .{ "store", 0 },
-            .{ "call", 2 },
-            .{ "global", 0 },
+        const upstream_specs = [_]struct { []const u8, u32, bool }{
+            .{ "i32", 0, true },
+            .{ "i64", 0, false },
+            .{ "f32", 2, false },
+            .{ "f64", 2, false },
+            .{ "f32_cmp", 0, false },
+            .{ "f64_cmp", 0, false },
+            .{ "labels", 0, false },
+            .{ "local_get", 0, false },
+            .{ "local_set", 0, false },
+            .{ "local_tee", 0, false },
+            .{ "br_if", 0, false },
+            // .{ "loop", 0, false },
+            .{ "conversions", 6, false },
+            .{ "memory", 0, false },
+            .{ "memory_copy", 0, false },
+            .{ "memory_fill", 0, false },
+            .{ "load", 0, false },
+            .{ "store", 0, false },
+            .{ "call", 2, false },
+            .{ "global", 0, false },
         };
         for (upstream_specs) |item| {
-            const name, const fail = item;
-            add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, fail);
+            const name, const fail, const heavy = item;
+            add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, fail, false);
+            if (heavy) { // if heavy also run non-heavy
+                add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, fail, true);
+            }
         }
     }
 
-    add_spectest(b, run_spec_tests, wast_exe, b.path("test/misc.wast"), "misc", 0);
-    add_spectest(b, run_spec_tests, wast_exe, b.path("test/loop.wast"), "loop", 0);
+    add_spectest(b, run_spec_tests, wast_exe, b.path("test/misc.wast"), "misc", 0, false);
+    add_spectest(b, run_spec_tests, wast_exe, b.path("test/loop.wast"), "loop", 0, false);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
@@ -136,12 +139,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lib_unit_tests.step);
 }
 
-fn add_spectest(b: *std.Build, test_step: *std.Build.Step, wast_exe: *std.Build.Step.Compile, file: std.Build.LazyPath, name: []const u8, fail: u32) void {
+fn add_spectest(b: *std.Build, test_step: *std.Build.Step, wast_exe: *std.Build.Step.Compile, file: std.Build.LazyPath, name: []const u8, fail: u32, heavy: bool) void {
     const spec_step = b.addRunArtifact(wast_exe);
     spec_step.addFileArg(file);
     spec_step.addArgs(&.{ "--specname", name });
     if (fail > 0) {
         spec_step.addArgs(&.{ "--errors", b.fmt("{}", .{fail}) });
     }
+    if (heavy) spec_step.addArg("--heavy");
     test_step.dependOn(&spec_step.step);
 }
