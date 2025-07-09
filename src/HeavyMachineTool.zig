@@ -70,6 +70,24 @@ fn wide(typ: defs.ValType) !bool {
     };
 }
 
+pub fn stupidExceptionHandler() void {
+    const posix = std.posix;
+    var act = posix.Sigaction{
+        .handler = .{ .sigaction = sigHandler },
+        .mask = posix.empty_sigset,
+        .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
+    };
+
+    posix.sigaction(posix.SIG.TRAP, &act, null);
+}
+
+fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.C) void {
+    _ = sig;
+    _ = info;
+    _ = ctx_ptr;
+    std.debug.print("stupid!\n", .{});
+}
+
 pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function) !void {
     _ = id;
     const ir = &self.flir;
@@ -92,6 +110,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             }
         }
     }
+
+    // There might be trapping exits. later on these should be implemented like setjmp/longjmp
+    // but for now..
+    const exit_node = try ir.addNode();
+    if (f.n_res != 1) return error.NotImplemented;
+    const exit_var = try ir.variable(.{ .intptr = .dword });
+    try ir.ret(exit_node, .{ .intptr = .dword }, exit_var);
 
     var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
@@ -162,7 +187,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const label = try r.readu();
                 if (label > label_stack.items.len - 1) return error.InternalCompilerError;
                 const target = label_stack.items[label_stack.items.len - label - 1];
-                _ = try ir.icmp(node, .dword, .neq, lhs, rhs);
+                const cmpop: FLIR.IntCond = .neq;
+                _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
                 try ir.addLink(node, 1, target.ir_target); // branch taken
                 node = try ir.addNodeAfter(node);
             },
@@ -170,9 +196,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (label_stack.pop()) |label| {
                     _ = label; // in case of a blk, patch up!
                 } else {
-                    if (f.n_res != 1) return error.NotImplemented;
+                    if (f.n_res != 1) return error.Notimplemented;
                     if (value_stack.items.len != 1) return error.InternalCompilerError;
-                    try ir.ret(node, .{ .intptr = .dword }, value_stack.items[0]);
+                    try ir.putvar(node, exit_var, value_stack.items[0]);
+                    try ir.addLink(node, 0, exit_node);
                     break;
                 }
             },
@@ -187,13 +214,23 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_add => .mul,
                             .i32_sub => .sub,
                             .i32_mul => .mul,
-                            // .i32_div_s => .div,
-                            // .i32_div_u => .div,
+                            .i32_div_s => .sdiv,
+                            .i32_div_u => .udiv,
                             else => {
                                 dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
                             },
                         };
+                        if (flir_op == .sdiv or flir_op == .udiv) {
+                            _ = try ir.icmp(node, .dword, .eq, rhs, try ir.const_uint(0));
+                            const exception_node = try ir.addNode();
+                            try ir.addLink(node, 1, exception_node); // branch taken
+                            node = try ir.addNodeAfter(node);
+
+                            // TODO: bulll
+                            try ir.putvar(exception_node, exit_var, try ir.const_uint(77));
+                            try ir.addLink(exception_node, 0, exit_node); // branch taken
+                        }
                         const res = try ir.ibinop(node, .dword, flir_op, lhs, rhs);
                         try value_stack.append(res);
                     },
