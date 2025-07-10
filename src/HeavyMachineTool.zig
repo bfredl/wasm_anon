@@ -16,6 +16,7 @@ const defs = @import("./defs.zig");
 const HeavyMachineTool = @This();
 flir: FLIR,
 mod: forklift.CFOModule,
+longjmp_func: u32 = undefined,
 
 pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
     return .{
@@ -28,6 +29,7 @@ pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
 pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     const mod = in.mod;
     try mod.mark_exports(); // or already??
+    try self.build_longjmp();
     for (0.., mod.funcs_internal) |i, *f| {
         self.compileFunc(in, i, f) catch |e| switch (e) {
             error.NotImplemented => {
@@ -42,10 +44,15 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     }
     try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
     try self.mod.code.finalize();
+    longjmp_f = try self.mod.get_func_ptr_id(self.longjmp_func, @TypeOf(longjmp_f));
 }
 
+pub var jmp_buf: JmpBuf = undefined;
+pub var jmp_active: bool = false;
+pub const JmpBuf = struct { [8]u64 };
+pub var longjmp_f: *const fn (status: usize, buf: *const JmpBuf) void = undefined;
 const StackValue = defs.StackValue;
-const TrampolineFn = *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue) callconv(.C) u32;
+const TrampolineFn = *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue, jmp_buf: *JmpBuf) callconv(.C) u32;
 pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
     if (idx < in.mod.n_funcs_import or idx >= in.mod.n_imports + in.mod.funcs_internal.len) return error.OutOfRange;
     const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
@@ -54,10 +61,14 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
         dbg("ERROR: {s}\n", .{err});
     }
 
+    stupidExceptionHandler(); // only once!!!!!
+
     const trampoline_obj = func.hmt_trampoline orelse return error.NotImplemented;
 
     const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
-    const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr);
+    jmp_active = true;
+    const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr, &jmp_buf);
+    jmp_active = false;
     if (status != 0) return error.WASMTrap;
     return func.n_res;
 }
@@ -74,18 +85,42 @@ pub fn stupidExceptionHandler() void {
     const posix = std.posix;
     var act = posix.Sigaction{
         .handler = .{ .sigaction = sigHandler },
-        .mask = posix.empty_sigset,
+        .mask = posix.sigemptyset(),
         .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
     };
 
-    posix.sigaction(posix.SIG.TRAP, &act, null);
+    posix.sigaction(posix.SIG.FPE, &act, null);
+}
+
+fn build_longjmp(self: *HeavyMachineTool) !void {
+    self.longjmp_func = @intCast(self.mod.objs.items.len);
+    const longjmp_target = self.mod.code.get_target();
+    try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = longjmp_target } }, .name = null });
+
+    var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
+    try cfo.mov(true, .rax, .rdi); // status = arg1
+    const b = X86Asm.a(.rsi); // jmp_buf = arg2
+    try cfo.movrm(true, .rbx, b);
+    try cfo.movrm(true, .rbp, b.o(8));
+    try cfo.movrm(true, .r12, b.o(16));
+    try cfo.movrm(true, .r13, b.o(24));
+    try cfo.movrm(true, .r14, b.o(32));
+    try cfo.movrm(true, .r15, b.o(40));
+    try cfo.movrm(true, .rsp, b.o(48)); // NOTE: as inline we don't need to adjust
+    try cfo.jmpi_m(b.o(56));
 }
 
 fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.C) void {
     _ = sig;
     _ = info;
     _ = ctx_ptr;
-    std.debug.print("stupid!\n", .{});
+    if (jmp_active) {
+        std.debug.print("stupid!\n", .{});
+        longjmp_f(7, &jmp_buf);
+    } else {
+        std.debug.print("very stupid!\n", .{});
+        std.posix.exit(11);
+    }
 }
 
 pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function) !void {
@@ -221,7 +256,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                                 return error.NotImplemented;
                             },
                         };
-                        if (flir_op == .sdiv or flir_op == .udiv) {
+                        // fail attempt, we handle SIGFPE instead
+                        if (false and (flir_op == .sdiv or flir_op == .udiv)) {
                             _ = try ir.icmp(node, .dword, .eq, rhs, try ir.const_uint(0));
                             const exception_node = try ir.addNode();
                             try ir.addLink(node, 1, exception_node); // branch taken
@@ -262,17 +298,37 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const ret_type = try in.mod.type_params(f.typeidx, &local_types_buf);
     const local_types = local_types_buf[0..f.n_params];
 
+    var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
+    const frame = true;
+
+    // TODO: this could be after/shared/whatever?
+    const error_exit_target = self.mod.code.get_target();
+    try cfo.movri(false, .rax, 1); // TODO: do not. rax is the longjmp return code anyway
+    if (frame) try cfo.leave();
+    try cfo.ret();
+
     const trampolin_target = self.mod.code.get_target();
-    // trampolin,  *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue) u32;
+    // trampolin,  *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue, jmp_buf: *JmpBpub f) u32;
     // arg 1: RDI = mem
     // arg2 : RSI = mem_size
     // arg3 : RDX = params
     // arg4: RCX = ret
-    var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
-    const frame = true;
+    // arg5: R8 = jmp_buf
     // try cfo.trap();
     if (frame) try cfo.enter();
     if (ret_type) |_| try cfo.push(.rcx);
+
+    // inline setjmp
+    const b = X86Asm.a(.r8);
+    try cfo.movmr(true, b, .rbx);
+    try cfo.movmr(true, b.o(8), .rbp);
+    try cfo.movmr(true, b.o(16), .r12);
+    try cfo.movmr(true, b.o(24), .r13);
+    try cfo.movmr(true, b.o(32), .r14);
+    try cfo.movmr(true, b.o(40), .r15);
+    try cfo.movmr(true, b.o(48), .rsp); // NOTE: as inline we don't need to adjust
+    try cfo.lea(.rax, X86Asm.rel(error_exit_target));
+    try cfo.movmr(true, b.o(56), .rax);
 
     // TODO: offset with mem when we start using it
     const ireg: [max_args]IPReg = .{ .rdi, .rsi };
@@ -295,7 +351,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         };
         try cfo.movmr(w, X86Asm.a(.rcx), .rax); // only one
     }
-    try cfo.zero(.rax); // TODO: error status
+    try cfo.zero(.rax); // non-error exit
+    // as a silly trick, setjmp target here? nice for debugging
     if (frame) try cfo.leave();
     try cfo.ret();
 
