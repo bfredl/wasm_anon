@@ -45,12 +45,14 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
     try self.mod.code.finalize();
     longjmp_f = try self.mod.get_func_ptr_id(self.longjmp_func, @TypeOf(longjmp_f));
+
+    globalExceptionHandler();
 }
 
 pub var jmp_buf: JmpBuf = undefined;
 pub var jmp_active: bool = false;
 pub const JmpBuf = struct { [8]u64 };
-pub var longjmp_f: *const fn (status: usize, buf: *const JmpBuf) void = undefined;
+pub var longjmp_f: *const fn (status: usize, buf: *const JmpBuf) callconv(.C) void = undefined;
 const StackValue = defs.StackValue;
 const TrampolineFn = *const fn (mem: [*]u8, mem_size: usize, params: [*]const StackValue, ret: [*]StackValue, jmp_buf: *JmpBuf) callconv(.C) u32;
 pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const StackValue, ret: []StackValue, logga: bool) !u32 {
@@ -61,12 +63,12 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
         dbg("ERROR: {s}\n", .{err});
     }
 
-    stupidExceptionHandler(); // only once!!!!!
-
     const trampoline_obj = func.hmt_trampoline orelse return error.NotImplemented;
 
     const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
     jmp_active = true;
+    // std.debug.print("info jmp buf: {x}={}\ntrampolin: {x}={}\n", .{ @intFromPtr(&jmp_buf), @intFromPtr(&jmp_buf), @intFromPtr(f), @intFromPtr(f) });
+    // asm volatile ("int3");
     const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr, &jmp_buf);
     jmp_active = false;
     if (status != 0) return error.WASMTrap;
@@ -81,12 +83,13 @@ fn wide(typ: defs.ValType) !bool {
     };
 }
 
-pub fn stupidExceptionHandler() void {
+pub fn globalExceptionHandler() void {
     const posix = std.posix;
     var act = posix.Sigaction{
         .handler = .{ .sigaction = sigHandler },
         .mask = posix.sigemptyset(),
-        .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
+        // don't mask out signal, as we are going to longjmp out of the handler
+        .flags = (posix.SA.SIGINFO | posix.SA.RESTART | posix.SA.NODEFER),
     };
 
     posix.sigaction(posix.SIG.FPE, &act, null);
@@ -115,7 +118,6 @@ fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyop
     _ = info;
     _ = ctx_ptr;
     if (jmp_active) {
-        std.debug.print("stupid!\n", .{});
         longjmp_f(7, &jmp_buf);
     } else {
         std.debug.print("very stupid!\n", .{});
