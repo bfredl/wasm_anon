@@ -252,11 +252,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;
                         const flir_op: FLIR.IntBinOp = switch (tag) {
-                            .i32_add => .mul,
+                            .i32_add => .add,
                             .i32_sub => .sub,
                             .i32_mul => .mul,
                             .i32_div_s => .sdiv,
                             .i32_div_u => .udiv,
+                            .i32_and => .@"and",
+                            .i32_or => .@"or",
+                            .i32_xor => .xor,
+                            .i32_shl => .shl,
+                            .i32_shr_s => .shr,
+                            .i32_shr_u => .sar,
                             else => {
                                 dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
