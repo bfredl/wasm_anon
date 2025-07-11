@@ -25,6 +25,13 @@ pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
     };
 }
 
+fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
+    const debug_info = try std.debug.getSelfDebugInfo();
+    const module = try debug_info.getModuleForAddress(address);
+    const symbol_info = try module.getSymbolAtAddress(debug_info.allocator, address);
+    return std.fmt.allocPrint(allocator, "{}", .{symbol_info});
+}
+
 // why an Instance instead of a module? why not? why ask?
 pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
     const mod = in.mod;
@@ -34,8 +41,14 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
         self.compileFunc(in, i, f) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
-                    // fill in using error return trace?
                     f.hmt_error = "??UNKNOWN";
+                    if (@errorReturnTrace()) |trace| {
+                        const n_frames = @min(trace.index, trace.instruction_addresses.len);
+                        if (n_frames > 0) {
+                            const address = trace.instruction_addresses[0];
+                            f.hmt_error = simple_symbol(mod.allocator, address) catch "fuuuuuuuu";
+                        }
+                    }
                 }
                 continue; // ok, note the error
             },
@@ -189,7 +202,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     while (true) {
         // const pos = r.pos;
         const inst = try r.readOpCode();
-        f.hmt_error = @tagName(inst); // NOT LIKE THIS
         switch (inst) {
             .i32_const => {
                 const val = try r.readLeb(i32);
@@ -218,20 +230,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
                 try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry });
-            },
-            .i32_ne => {
-                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                if (peekinst != .br_if) return error.NotImplemented;
-                _ = try r.readByte();
-                const rhs = value_stack.pop().?;
-                const lhs = value_stack.pop().?;
-                const label = try r.readu();
-                if (label > label_stack.items.len - 1) return error.InternalCompilerError;
-                const target = label_stack.items[label_stack.items.len - label - 1];
-                const cmpop: FLIR.IntCond = .neq;
-                _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
-                try ir.addLink(node, 1, target.ir_target); // branch taken
-                node = try ir.addNodeAfter(node);
             },
             .end => {
                 if (label_stack.pop()) |label| {
@@ -282,6 +280,32 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         const res = try ir.ibinop(node, .dword, flir_op, lhs, rhs);
                         try value_stack.append(res);
                     },
+                    .i32_relop => {
+                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                        if (peekinst != .br_if) return error.NotImplemented;
+                        _ = try r.readByte();
+                        const rhs = value_stack.pop().?;
+                        const lhs = value_stack.pop().?;
+                        const label = try r.readu();
+                        if (label > label_stack.items.len - 1) return error.InternalCompilerError;
+                        const target = label_stack.items[label_stack.items.len - label - 1];
+                        const cmpop: FLIR.IntCond = switch (tag) {
+                            .i32_ne => .neq,
+                            .i32_eq => .eq,
+                            .i32_lt_s => .lt,
+                            .i32_le_s => .le,
+                            .i32_gt_s => .gt,
+                            .i32_ge_s => .ge,
+                            .i32_lt_u => .b,
+                            .i32_le_u => .na,
+                            .i32_gt_u => .a,
+                            .i32_ge_u => .nb,
+                            else => @compileError(@tagName(tag)),
+                        };
+                        _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
+                        try ir.addLink(node, 1, target.ir_target); // branch taken
+                        node = try ir.addNodeAfter(node);
+                    },
                     else => |cat| {
                         dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(cat) });
                         return error.NotImplemented;
@@ -290,7 +314,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
         }
     }
-    f.hmt_error = null; // NOT LIKE THIS
     ir.debug_print();
 
     try ir.test_analysis(FLIR.X86ABI, true);
