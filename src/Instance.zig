@@ -100,9 +100,9 @@ pub const Engine = union(enum) {
     heavy: *HeavyMachineTool,
 };
 
-pub fn execute_either(in: *Instance, engine: Engine, idx: u32, params: []const defs.StackValue, ret: []defs.StackValue, logga: bool) !u32 {
+pub fn execute_either(in: *Instance, engine: Engine, idx: u32, params: []const defs.StackValue, ret: []defs.StackValue, logga: bool, err_ret: ?*?[]const u8) !u32 {
     return switch (engine) {
         .interpreter => |i| i.execute(in, idx, params, ret, logga),
-        .heavy => |h| h.execute(in, idx, params, ret, logga),
+        .heavy => |h| h.execute(in, idx, params, ret, logga, err_ret),
     };
 }

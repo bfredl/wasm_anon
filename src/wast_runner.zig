@@ -208,11 +208,16 @@ pub fn main() !u8 {
 
         var res: [max_res]StackValue = undefined;
         try interpreter.assert_clean();
-        const maybe_n_res = in.execute_either(engine, sym.idx, params.items, &res, false) catch |err| fail: {
+        var err_ret: ?[]const u8 = null;
+        const maybe_n_res = in.execute_either(engine, sym.idx, params.items, &res, false, &err_ret) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {
-                    dbg("NYI\n", .{});
-                    if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace.*);
+                    if (err_ret) |msg| {
+                        std.debug.print("NYI: {s}\n", .{msg});
+                    } else {
+                        dbg("NYI\n", .{});
+                        if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace.*);
+                    }
                     failures += 1;
                     continue;
                 },

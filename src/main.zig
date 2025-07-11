@@ -101,7 +101,7 @@ pub fn main() !u8 {
 
         const num = try std.fmt.parseInt(i32, p.args.arg orelse @panic("gib --arg"), 10);
         var res: [1]StackValue = undefined;
-        const n_res = try in.execute_either(engine, sym.idx, &.{.{ .i32 = num }}, &res, true);
+        const n_res = try in.execute_either(engine, sym.idx, &.{.{ .i32 = num }}, &res, true, null);
         if (n_res != 1) dbg("TODO: n_res\n", .{});
         dbg("{s}({}) == {}\n", .{ callname, num, res[0].i32 });
     } else {
@@ -139,7 +139,7 @@ fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.m
 
     if (sym.kind != .func) @panic("_start not a function :(");
 
-    _ = in.execute_either(engine, sym.idx, &.{}, &.{}, true) catch |err| {
+    _ = in.execute_either(engine, sym.idx, &.{}, &.{}, true, null) catch |err| {
         if (err == error.WASMTrap) {
             if (state.exit_status) |status| {
                 // TRAP was sent by wasi_proc_exit
