@@ -28,8 +28,16 @@ pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
 fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
     const debug_info = try std.debug.getSelfDebugInfo();
     const module = try debug_info.getModuleForAddress(address);
-    const symbol_info = try module.getSymbolAtAddress(debug_info.allocator, address);
-    return std.fmt.allocPrint(allocator, "{}", .{symbol_info});
+    const s = try module.getSymbolAtAddress(debug_info.allocator, address);
+    if (false) return std.fmt.allocPrint(allocator, "{}", .{s});
+
+    if (s.source_location) |l| {
+        const name = if (std.mem.lastIndexOfScalar(u8, l.file_name, '/')) |i| l.file_name[i + 1 ..] else l.file_name;
+        return std.fmt.allocPrint(allocator, "{s}:{s}:{}", .{ name, s.name, l.line });
+    } else {
+        return std.fmt.allocPrint(allocator, "?? {s} {s}", .{ s.compile_unit_name, s.name });
+        // boo
+    }
 }
 
 // why an Instance instead of a module? why not? why ask?
