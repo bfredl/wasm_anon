@@ -36,7 +36,6 @@ fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
         return std.fmt.allocPrint(allocator, "{s}:{s}:{}", .{ name, s.name, l.line });
     } else {
         return std.fmt.allocPrint(allocator, "?? {s} {s}", .{ s.compile_unit_name, s.name });
-        // boo
     }
 }
 
@@ -289,14 +288,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         try value_stack.append(res);
                     },
                     .i32_relop => {
-                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                        if (peekinst != .br_if) return error.NotImplemented;
-                        _ = try r.readByte();
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;
-                        const label = try r.readu();
-                        if (label > label_stack.items.len - 1) return error.InternalCompilerError;
-                        const target = label_stack.items[label_stack.items.len - label - 1];
                         const cmpop: FLIR.IntCond = switch (tag) {
                             .i32_ne => .neq,
                             .i32_eq => .eq,
@@ -310,9 +303,20 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_ge_u => .nb,
                             else => @compileError(@tagName(tag)),
                         };
-                        _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
-                        try ir.addLink(node, 1, target.ir_target); // branch taken
-                        node = try ir.addNodeAfter(node);
+
+                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                        if (peekinst == .br_if) {
+                            _ = try r.readByte();
+                            _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
+                            const label = try r.readu();
+                            if (label > label_stack.items.len - 1) return error.InternalCompilerError;
+                            const target = label_stack.items[label_stack.items.len - label - 1];
+                            try ir.addLink(node, 1, target.ir_target); // branch taken
+                            node = try ir.addNodeAfter(node);
+                        } else {
+                            const res = try ir.icmpset(node, .dword, cmpop, lhs, rhs);
+                            try value_stack.append(res);
+                        }
                     },
                     else => |cat| {
                         dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(cat) });
