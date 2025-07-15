@@ -276,6 +276,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_mul => .mul,
                             .i32_div_s => .sdiv,
                             .i32_div_u => .udiv,
+                            .i32_rem_s => .srem,
+                            .i32_rem_u => .urem,
                             .i32_and => .@"and",
                             .i32_or => .@"or",
                             .i32_xor => .xor,
