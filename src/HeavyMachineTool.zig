@@ -269,7 +269,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_shr_s => .shr,
                             .i32_shr_u => .sar,
                             else => {
-                                dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(category) });
+                                f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
                             },
                         };
@@ -320,6 +320,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     },
                     else => |cat| {
                         dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(cat) });
+                        f.hmt_error = @tagName(tag);
                         return error.NotImplemented;
                     },
                 }
