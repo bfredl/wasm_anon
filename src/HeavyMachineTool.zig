@@ -253,6 +253,20 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 switch (category) {
+                    .i32_unop => {
+                        const src = value_stack.pop().?;
+                        const flir_op: FLIR.IntUnOp = switch (tag) {
+                            .i32_popcnt => .popcount,
+                            .i32_ctz => .ctz,
+                            .i32_clz => .clz,
+                            else => {
+                                f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
+                                return error.NotImplemented;
+                            },
+                        };
+                        const res = try ir.iunop(node, .dword, flir_op, src);
+                        try value_stack.append(res);
+                    },
                     .i32_binop => {
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;
