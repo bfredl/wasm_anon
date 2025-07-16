@@ -28,7 +28,7 @@ pub fn main() !u8 {
         .allocator = gpa.allocator(),
     }) catch |err| {
         // Report useful error and exit.
-        diag.report(std.io.getStdErr().writer(), err) catch {};
+        try diag.reportToFile(.stderr(), err);
         return err;
     };
 

@@ -14,7 +14,7 @@ const IPReg = X86Asm.IPReg;
 //
 // TODO: eleminate stack_base as this is should be a compile time known offset from frame_base
 
-pub const BlockFunc = *const fn (frame_base: [*]defs.StackValue, stack_base: [*]defs.StackValue, mem_start: [*]u8, mem_len: usize) callconv(.C) void;
+pub const BlockFunc = *const fn (frame_base: [*]defs.StackValue, stack_base: [*]defs.StackValue, mem_start: [*]u8, mem_len: usize) callconv(.c) void;
 
 pub const LightningTrace = struct {
     func: BlockFunc,

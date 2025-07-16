@@ -40,7 +40,7 @@ pub fn main() !u8 {
         .allocator = gpa.allocator(),
     }) catch |err| {
         // Report useful error and exit.
-        diag.report(std.io.getStdErr().writer(), err) catch {};
+        try diag.reportToFile(.stderr(), err);
         return err;
     };
     defer p.deinit();
@@ -213,7 +213,7 @@ fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void 
         // TODO: actually use ioKVÄCK of the underlying platform
         const aout = try in.mem_get_bytes(iptr, ilen);
         if (fd == 1) {
-            _ = std.io.getStdOut().write(aout) catch return error.WASMTrap;
+            _ = std.fs.File.stdout().write(aout) catch return error.WASMTrap;
         } else {
             std.debug.print("{s}", .{aout});
         }

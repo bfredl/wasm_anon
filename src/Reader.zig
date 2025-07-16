@@ -8,8 +8,8 @@ pos: u32,
 
 pub fn readLeb(r: *Reader, comptime T: type) !T {
     return switch (@typeInfo(T).int.signedness) {
-        .signed => std.leb.readILEB128(T, r),
-        .unsigned => std.leb.readULEB128(T, r),
+        .signed => std.leb.readIleb128(T, r),
+        .unsigned => std.leb.readUleb128(T, r),
     };
 }
 
