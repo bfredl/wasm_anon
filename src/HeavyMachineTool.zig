@@ -206,6 +206,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     errdefer ir.debug_print(); // show what we got when it ends
 
+    // if true, br and br_if should use a icmp/fcmp/etc already emitted
+    var cond_pending = false;
+
     while (true) {
         // const pos = r.pos;
         const inst = try r.readOpCode();
@@ -247,6 +250,30 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     try ir.putvar(node, exit_var, value_stack.items[0]);
                     try ir.addLink(node, 0, exit_node);
                     break;
+                }
+            },
+            .br_if => {
+                if (!cond_pending) {
+                    return error.NotImplemented;
+                } else cond_pending = false;
+                const label = try r.readu();
+                if (label > label_stack.items.len - 1) return error.InternalCompilerError;
+                const target = label_stack.items[label_stack.items.len - label - 1];
+                try ir.addLink(node, 1, target.ir_target); // branch taken
+                node = try ir.addNodeAfter(node);
+            },
+            .i32_eqz => {
+                const val = value_stack.pop().?;
+                const zero = try ir.const_uint(0);
+
+                // NB: semi-copy in i32_relop
+                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                if (peekinst == .br_if) {
+                    _ = try ir.icmp(node, .dword, .eq, val, zero);
+                    cond_pending = true;
+                } else {
+                    const res = try ir.icmpset(node, .dword, .eq, val, zero);
+                    try value_stack.append(res);
                 }
             },
             // TODO: this leads to some bloat - some things like binops could be done as a bulk
@@ -321,14 +348,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         };
 
                         const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                        // NB: semi-copy in i32_eqz
                         if (peekinst == .br_if) {
-                            _ = try r.readByte();
                             _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
-                            const label = try r.readu();
-                            if (label > label_stack.items.len - 1) return error.InternalCompilerError;
-                            const target = label_stack.items[label_stack.items.len - label - 1];
-                            try ir.addLink(node, 1, target.ir_target); // branch taken
-                            node = try ir.addNodeAfter(node);
+                            cond_pending = true;
                         } else {
                             const res = try ir.icmpset(node, .dword, cmpop, lhs, rhs);
                             try value_stack.append(res);
