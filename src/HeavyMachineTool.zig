@@ -172,8 +172,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
-    // There might be trapping exits. later on these should be implemented like setjmp/longjmp
-    // but for now..
+    // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
     if (f.n_res != 1) return error.NotImplemented;
     const exit_var = try ir.variable(.{ .intptr = .dword });
@@ -316,17 +315,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                                 return error.NotImplemented;
                             },
                         };
-                        // fail attempt, we handle SIGFPE instead
-                        if (false and (flir_op == .sdiv or flir_op == .udiv)) {
-                            _ = try ir.icmp(node, .dword, .eq, rhs, try ir.const_uint(0));
-                            const exception_node = try ir.addNode();
-                            try ir.addLink(node, 1, exception_node); // branch taken
-                            node = try ir.addNodeAfter(node);
-
-                            // TODO: bulll
-                            try ir.putvar(exception_node, exit_var, try ir.const_uint(77));
-                            try ir.addLink(exception_node, 0, exit_node); // branch taken
-                        }
                         const res = try ir.ibinop(node, .dword, flir_op, lhs, rhs);
                         try value_stack.append(res);
                     },
