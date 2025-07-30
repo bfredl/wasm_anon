@@ -285,12 +285,19 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_popcnt => .popcount,
                             .i32_ctz => .ctz,
                             .i32_clz => .clz,
+                            .i32_extend8_s => .sign_extend,
+                            .i32_extend16_s => .sign_extend,
                             else => {
                                 f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
                             },
                         };
-                        const res = try ir.iunop(node, .dword, flir_op, src);
+                        const size: forklift.defs.ISize = switch (tag) {
+                            .i32_extend8_s => .byte,
+                            .i32_extend16_s => .word,
+                            else => .dword,
+                        };
+                        const res = try ir.iunop(node, size, flir_op, src);
                         try value_stack.append(res);
                     },
                     .i32_binop => {
