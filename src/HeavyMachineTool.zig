@@ -317,6 +317,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_shl => .shl,
                             .i32_shr_s => .sar,
                             .i32_shr_u => .shr,
+                            .i32_rotl => .rotl,
+                            .i32_rotr => .rotr,
                             else => {
                                 f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
