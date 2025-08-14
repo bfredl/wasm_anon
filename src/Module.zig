@@ -256,12 +256,12 @@ pub fn mark_exports(self: *Module) !void {
     var r = self.reader_at(self.export_off);
     const len = try r.readu();
     for (0..len) |_| {
-        _ = try r.readName();
+        const name = try r.readName();
         const kind: defs.ImportExportKind = @enumFromInt(try r.readByte());
         const idx = try r.readu();
         if (kind == .func and idx >= self.n_funcs_import) {
             // TODO: reexport of imports allowed??
-            self.funcs_internal[idx - self.n_funcs_import].exported = true;
+            self.funcs_internal[idx - self.n_funcs_import].exported = name;
         }
     }
 }

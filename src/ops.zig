@@ -198,18 +198,22 @@ pub const frelop = struct {
     }
 };
 
+fn maxIntAsFloat(floattype: type, inttype: type) floattype {
+    return @floatFromInt(std.math.maxInt(inttype));
+}
+
 fn intFromFloat(inttype: type, fval: anytype) WASMError!inttype {
     if (std.math.isNan(fval)) return error.WASMTrap;
-    if (fval > std.math.maxInt(inttype)) return error.WASMTrap;
+    if (fval > maxIntAsFloat(@TypeOf(fval), inttype)) return error.WASMTrap;
     const truncval = @trunc(fval);
-    if (truncval >= std.math.maxInt(inttype) or truncval < std.math.minInt(inttype)) return error.WASMTrap;
+    if (truncval >= maxIntAsFloat(@TypeOf(fval), inttype) or truncval < std.math.minInt(inttype)) return error.WASMTrap;
     return @intFromFloat(truncval);
 }
 
 fn intFromFloat_sat(inttype: type, fval: anytype) WASMError!inttype {
     if (std.math.isNan(fval)) return 0;
     const truncval = @trunc(fval);
-    if (truncval >= std.math.maxInt(inttype)) return std.math.maxInt(inttype);
+    if (truncval >= maxIntAsFloat(@TypeOf(fval), inttype)) return std.math.maxInt(inttype);
     if (truncval < std.math.minInt(inttype)) return std.math.minInt(inttype);
     return @intFromFloat(truncval);
 }

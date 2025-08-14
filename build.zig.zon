@@ -16,7 +16,7 @@
     .dependencies = .{
         .spec = .{
             .url = "git+https://github.com/WebAssembly/spec#f3a0e06235d2d84bb0f3b5014da4370613886965",
-            .hash = "1220a37ae426c8f09c7ede1ef38fdbe3776aeb3c615272b554fed02f51084db66b73",
+            .hash = "N-V-__8AADKJRwGjeuQmyPCcft4e84_b43dq6zxhUnK1VP7Q",
             .lazy = true,
         },
         .clap = .{

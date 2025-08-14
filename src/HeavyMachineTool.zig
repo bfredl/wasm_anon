@@ -174,9 +174,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
-    if (f.n_res != 1) return error.NotImplemented;
+    if (f.n_res > 1) return error.NotImplemented;
     const exit_var = try ir.variable(.{ .intptr = .dword });
-    try ir.ret(exit_node, .{ .intptr = .dword }, exit_var);
+    // TODO: ir.ret(VOID)
+    try ir.ret(exit_node, .{ .intptr = .dword }, if (f.n_res > 0) exit_var else try ir.const_uint(0));
 
     var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
@@ -200,10 +201,18 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var value_stack: std.ArrayList(u16) = .init(in.mod.allocator);
     defer value_stack.deinit();
 
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16 }) = .init(in.mod.allocator);
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, loop: bool }) = .init(in.mod.allocator);
     defer label_stack.deinit();
 
     errdefer ir.debug_print(); // show what we got when it ends
+
+    errdefer {
+        if (f.name) |nam| {
+            std.debug.print("FOR \"{s}\":", .{nam});
+        } else if (f.exported) |nam| {
+            std.debug.print("FOR export \"{s}\":", .{nam});
+        }
+    }
 
     // if true, br and br_if should use a icmp/fcmp/etc already emitted
     var cond_pending = false;
@@ -212,6 +221,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         // const pos = r.pos;
         const inst = try r.readOpCode();
         switch (inst) {
+            .drop => {
+                _ = value_stack.pop().?;
+            },
             .i32_const => {
                 const val = try r.readLeb(i32);
                 try value_stack.append(try ir.const_uint(@bitCast(@as(i64, val))));
@@ -238,22 +250,36 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
-                try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry });
+                try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry, .loop = true });
+            },
+            .block => {
+                const typ = try r.blocktype();
+                const n_args, const n_results = try typ.arity(in.mod);
+                if (n_args != 0 or n_results != 0) return error.NotImplemented;
+                c_ip += 1;
+                const exit = try ir.addNode();
+                try label_stack.append(.{ .c_ip = c_ip, .ir_target = exit, .loop = false });
             },
             .end => {
                 if (label_stack.pop()) |label| {
-                    _ = label; // in case of a blk, patch up!
+                    if (!label.loop) {
+                        try ir.addLink(node, 0, label.ir_target);
+                        node = label.ir_target;
+                    }
                 } else {
-                    if (f.n_res != 1) return error.Notimplemented;
-                    if (value_stack.items.len != 1) return error.InternalCompilerError;
-                    try ir.putvar(node, exit_var, value_stack.items[0]);
+                    if (value_stack.items.len != f.n_res) return error.InternalCompilerError;
+                    if (f.n_res > 0) {
+                        if (f.n_res > 1) return error.Notimplemented;
+                        try ir.putvar(node, exit_var, value_stack.items[0]);
+                    }
                     try ir.addLink(node, 0, exit_node);
                     break;
                 }
             },
             .br_if => {
                 if (!cond_pending) {
-                    return error.NotImplemented;
+                    const val = value_stack.pop().?;
+                    _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
                 } else cond_pending = false;
                 const label = try r.readu();
                 if (label > label_stack.items.len - 1) return error.InternalCompilerError;
@@ -374,7 +400,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     f.hmt_object = @intCast(self.mod.objs.items.len);
     try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
 
-    if (!f.exported) return;
+    if (f.exported == null) return;
 
     const max_args = 2;
     if (f.n_params > max_args) return error.NotImplemented;

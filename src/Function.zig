@@ -4,7 +4,7 @@ n_params: u32 = undefined,
 n_res: u32 = undefined,
 codeoff: u32 = undefined,
 control: ?[]ControlItem = null,
-exported: bool = false,
+exported: ?[]const u8 = null,
 
 name: ?[]const u8 = null,
 
