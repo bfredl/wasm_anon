@@ -201,7 +201,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var value_stack: std.ArrayList(u16) = .init(in.mod.allocator);
     defer value_stack.deinit();
 
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, loop: bool }) = .init(in.mod.allocator);
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, loop: bool, res_var: u16 }) = .init(in.mod.allocator);
     defer label_stack.deinit();
 
     errdefer ir.debug_print(); // show what we got when it ends
@@ -250,21 +250,29 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
-                try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry, .loop = true });
+                try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef });
             },
             .block => {
                 const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(in.mod);
-                if (n_args != 0 or n_results != 0) return error.NotImplemented;
+                if (n_args > 0 or n_results > 1) return error.NotImplemented;
                 c_ip += 1;
                 const exit = try ir.addNode();
-                try label_stack.append(.{ .c_ip = c_ip, .ir_target = exit, .loop = false });
+                // technically just a single phi. but FLIR.variable() is meant to be cheap enough to not nead
+                // a separate API for "gimmie one phi".
+                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
+                try label_stack.append(.{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var });
             },
             .end => {
                 if (label_stack.pop()) |label| {
                     if (!label.loop) {
+                        const has_res = label.res_var != FLIR.NoRef;
+                        const tip = if (has_res) &value_stack.items[value_stack.items.len - 1] else undefined;
+                        if (has_res) try ir.putvar(node, label.res_var, tip.*);
                         try ir.addLink(node, 0, label.ir_target);
                         node = label.ir_target;
+                        // if this was the only exit it will be simplified back to the old value of tip.*
+                        if (has_res) tip.* = try ir.read_ref(node, label.res_var);
                     }
                 } else {
                     if (value_stack.items.len != f.n_res) return error.InternalCompilerError;
@@ -284,6 +292,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const label = try r.readu();
                 if (label > label_stack.items.len - 1) return error.InternalCompilerError;
                 const target = label_stack.items[label_stack.items.len - label - 1];
+                if (target.res_var != FLIR.NoRef) {
+                    if (value_stack.items.len == 0) return error.InternalCompilerError;
+                    // don't pop in case branch NOT taken
+                    try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
+                }
                 try ir.addLink(node, 1, target.ir_target); // branch taken
                 node = try ir.addNodeAfter(node);
             },
