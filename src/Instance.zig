@@ -27,7 +27,7 @@ pub fn get_global(self: *Instance, idx: u32) *defs.StackValue {
 pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
     var self = Instance{
         .mod = mod,
-        .mem = .init(mod.allocator),
+        .mem = .empty,
         .globals_maybe_indir = try mod.allocator.alloc(defs.StackValue, mod.n_globals_import + mod.n_globals_internal),
         .funcs_imported = try mod.allocator.alloc(defs.HostFunc, mod.n_funcs_import),
         .funcs_extra = try mod.allocator.alloc(defs.HostFunc, if (imports) |i| i.func_table_funcs.items.len else 0),
@@ -53,7 +53,7 @@ pub fn init(mod: *Module, imports: ?*ImportTable) !Instance {
 }
 
 pub fn deinit(self: *Instance) void {
-    self.mem.deinit();
+    self.mem.deinit(self.mod.allocator);
     self.mod.allocator.free(self.globals_maybe_indir);
     self.mod.allocator.free(self.funcs_imported);
 }
@@ -66,7 +66,7 @@ pub fn init_memory(in: *Instance, n_pages: u32) !void {
     if (n_pages == 0) return;
     if (in.mem.items.len > 0) return error.@"whattaf?????";
 
-    try in.mem.appendNTimes(0, defs.page_size * n_pages);
+    try in.mem.appendNTimes(in.mod.allocator, 0, defs.page_size * n_pages);
 }
 
 pub fn init_func_table(in: *Instance, len: u32) !void {

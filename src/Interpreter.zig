@@ -31,9 +31,10 @@ pub const StackFrame = struct {
     func: *Function,
 };
 
-values: std.ArrayList(StackValue),
-labels: std.ArrayList(StackLabel),
-frames: std.ArrayList(StackFrame),
+gpa: std.mem.Allocator,
+values: std.ArrayList(StackValue) = .empty,
+labels: std.ArrayList(StackLabel) = .empty,
+frames: std.ArrayList(StackFrame) = .empty,
 
 locals_ptr: u32 = 0,
 frame_ptr: u32 = 0,
@@ -44,16 +45,14 @@ func: *Function = undefined,
 
 pub fn init(allocator: std.mem.Allocator) Interpreter {
     return .{
-        .values = .init(allocator),
-        .labels = .init(allocator),
-        .frames = .init(allocator),
+        .gpa = allocator,
     };
 }
 
 pub fn deinit(self: *Interpreter) void {
-    self.values.deinit();
-    self.labels.deinit();
-    self.frames.deinit();
+    self.values.deinit(self.gpa);
+    self.labels.deinit(self.gpa);
+    self.frames.deinit(self.gpa);
 }
 
 pub fn assert_clean(self: *Interpreter) !void {
@@ -67,7 +66,7 @@ pub fn nvals(self: *Interpreter) u32 {
 }
 
 pub fn push(self: *Interpreter, value: StackValue) !void {
-    try self.values.append(value);
+    try self.values.append(self.gpa, value);
 }
 
 pub fn pushc(self: *Interpreter, value: StackValue) void {
@@ -75,7 +74,7 @@ pub fn pushc(self: *Interpreter, value: StackValue) void {
 }
 
 pub fn push_multiple(self: *Interpreter, values: []const StackValue) !void {
-    try self.values.appendSlice(values);
+    try self.values.appendSlice(self.gpa, values);
 }
 
 pub fn pop(self: *Interpreter) !StackValue {
@@ -84,11 +83,11 @@ pub fn pop(self: *Interpreter) !StackValue {
 }
 
 pub fn push_label(self: *Interpreter, c_ip: u32, n_vals: u16) !void {
-    try self.labels.append(.{ .c_ip = c_ip, .stack_level = @intCast(self.values.items.len), .n_vals = n_vals });
+    try self.labels.append(self.gpa, .{ .c_ip = c_ip, .stack_level = @intCast(self.values.items.len), .n_vals = n_vals });
 }
 
 pub fn push_frame(self: *Interpreter, r_ip: u32, c_ip: u32, func: *Function) !void {
-    try self.frames.append(.{ .r_ip = r_ip, .c_ip = c_ip, .func = func, .locals_ptr = self.locals_ptr, .frame_ptr = self.frame_ptr, .frame_label = self.frame_label });
+    try self.frames.append(self.gpa, .{ .r_ip = r_ip, .c_ip = c_ip, .func = func, .locals_ptr = self.locals_ptr, .frame_ptr = self.frame_ptr, .frame_label = self.frame_label });
 }
 
 pub fn top(self: *Interpreter) !*StackValue {
@@ -198,7 +197,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
 
     // note: this is is just to allow appendAssumeCapacity and similar.
     // with nested calls, unused space is passed forward to the nested function
-    try stack.values.ensureUnusedCapacity(stack.func.val_stack_max_height);
+    try stack.values.ensureUnusedCapacity(stack.gpa, stack.func.val_stack_max_height);
 
     const do_locals_opt = true;
 
@@ -293,7 +292,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                 const size_res = try stack.top();
                 const oldsize = in.mem.items.len;
                 // TODO: validate total size doesn't exceed mod.mem_limits.max, or addressable size limit (2**32 ?)
-                try in.mem.appendNTimes(0, 0x10000 * @as(usize, @intCast(size_res.i32)));
+                try in.mem.appendNTimes(in.mod.allocator, 0, 0x10000 * @as(usize, @intCast(size_res.i32)));
                 size_res.i32 = @intCast(oldsize / 0x10000);
             },
             .memory_size => {
@@ -420,7 +419,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                             return error.WASMTrap;
                         }
                     }
-                    if (f.n_res > f.n_args) try stack.values.appendNTimes(.{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
+                    if (f.n_res > f.n_args) try stack.values.appendNTimes(stack.gpa, .{ .i32 = 0x7001BEEF }, f.n_res - f.n_args);
                     try f.cb(stack.values.items[level..], in, f.data);
                     if (f.n_args > f.n_res) stack.values.items.len = level + f.n_res;
                 } else if (idx < mod.n_funcs_import + mod.funcs_internal.len) {
@@ -461,7 +460,7 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
                     stack.func = called;
                     c = called_control;
                     stack.enter_frame();
-                    try stack.values.ensureUnusedCapacity(called.val_stack_max_height);
+                    try stack.values.ensureUnusedCapacity(stack.gpa, called.val_stack_max_height);
                     // entire body is implicitly a block, producing the return values
                     try stack.push_label(@intCast(c.len - 1), @intCast(stack.func.n_res));
                     c_ip = 0;

@@ -81,8 +81,8 @@ pub fn main() !void {
         }
     }
 
-    var lang_func_name: std.ArrayList(u8) = .init(allocator);
-    try std.fmt.format(lang_func_name.writer(), "tree_sitter_{s}", .{langarg});
+    var lang_func_name: std.ArrayList(u8) = .empty;
+    try std.fmt.format(lang_func_name.writer(allocator), "tree_sitter_{s}", .{langarg});
     const sym = try mod.lookup_export(lang_func_name.items) orelse @panic("no such lang");
     if (sym.kind != .func) @panic("nej");
     var res: [1]StackValue = undefined;

@@ -79,7 +79,7 @@ pub fn main() !u8 {
     var failures: u32 = 0;
     var unapplicable: u32 = 0;
 
-    var params: std.ArrayList(StackValue) = .init(allocator);
+    var params: std.ArrayList(StackValue) = .empty;
 
     const Toplevel = enum { module, invoke, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 
@@ -141,7 +141,7 @@ pub fn main() !u8 {
                 break :parm undefined;
             };
             _ = try t.expect(.RightParen);
-            try params.append(value);
+            try params.append(allocator, value);
         }
         _ = try t.expect(.RightParen);
 

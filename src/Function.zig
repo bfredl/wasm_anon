@@ -66,11 +66,11 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
         const n_decl = try r.readu();
         n_locals += n_decl;
         const typ: defs.ValType = @enumFromInt(try r.readByte());
-        try local_types.appendNTimes(typ, n_decl);
+        try local_types.appendNTimes(mod.allocator, typ, n_decl);
         dbg("{} x {s}, ", .{ n_decl, @tagName(typ) });
     }
     dbg("\n", .{});
-    self.local_types = try local_types.toOwnedSlice();
+    self.local_types = try local_types.toOwnedSlice(mod.allocator);
 
     try self.parse_body(mod, r, n_locals);
 }
@@ -78,13 +78,13 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
 pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !void {
     var level: u32 = 1;
 
-    var clist: std.ArrayList(ControlItem) = .init(mod.allocator);
+    var clist: std.ArrayList(ControlItem) = .empty;
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
-    var cstack: std.ArrayList(struct { start: u16 }) = .init(mod.allocator);
+    var cstack: std.ArrayList(struct { start: u16 }) = .empty;
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
     // although having 0 as a "name" for the implicit entire-function block is useful..
-    try clist.append(.{ .off = r.pos, .jmp_t = 0 });
-    try cstack.append(.{ .start = 0 });
+    try clist.append(mod.allocator, .{ .off = r.pos, .jmp_t = 0 });
+    try cstack.append(mod.allocator, .{ .start = 0 });
 
     var val_stack_level: u16 = 0;
     var val_stack_height: u16 = 0;
@@ -105,11 +105,11 @@ pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !voi
                 // TODO: we're fine for now but reconsider with multi-value
                 // if (typ.results() != 0) return error.NotImplemented;
                 if (inst == .if_) val_stack_level -= 1;
-                try clist.append(.{ .off = pos, .jmp_t = 0 });
-                try cstack.append(.{ .start = @intCast(clist.items.len - 1) });
+                try clist.append(mod.allocator, .{ .off = pos, .jmp_t = 0 });
+                try cstack.append(mod.allocator, .{ .start = @intCast(clist.items.len - 1) });
             },
             .end => {
-                try clist.append(.{ .off = pos, .jmp_t = 0 });
+                try clist.append(mod.allocator, .{ .off = pos, .jmp_t = 0 });
                 const start = &clist.items[cstack.items[cstack.items.len - 1].start];
                 const start_op: defs.OpCode = @enumFromInt(r.buffer[start.off]);
                 dbg(" (for {s} at {x:04})", .{ @tagName(start_op), start.off });
@@ -118,19 +118,19 @@ pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !voi
             },
             .else_ => {
                 level += 1;
-                try clist.append(.{ .off = pos, .jmp_t = 0 });
+                try clist.append(mod.allocator, .{ .off = pos, .jmp_t = 0 });
                 dbg(" (for if_ at {x:04})", .{clist.items[cstack.items[cstack.items.len - 1].start].off});
                 // "if_" jumps to "else_", and "else_" jumps to end
                 clist.items[cstack.items[cstack.items.len - 1].start].jmp_t = @intCast(clist.items.len - 1);
                 cstack.items[cstack.items.len - 1].start = @intCast(clist.items.len - 1);
             },
             .br, .br_if => {
-                // try clist.append(.{ .off = pos, .jmp_t = 0 });
+                // try clist.append(mod.allocator, .{ .off = pos, .jmp_t = 0 });
                 const idx = try r.readu();
                 dbg(" {}", .{idx});
                 if (inst == .br_if) {
                     val_stack_level -= 1;
-                    try clist.append(.{ .off = pos, .jmp_t = 0 });
+                    try clist.append(mod.allocator, .{ .off = pos, .jmp_t = 0 });
                 }
             },
             .br_table => {
@@ -289,6 +289,6 @@ pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !voi
         dbg("{:2}: {x:04} {}\n", .{ i, c.off, c.jmp_t });
     }
 
-    self.control = try clist.toOwnedSlice();
+    self.control = try clist.toOwnedSlice(mod.allocator);
     self.val_stack_max_height = val_stack_height;
 }

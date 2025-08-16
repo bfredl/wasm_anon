@@ -172,7 +172,7 @@ pub fn import_section(self: *Module, r: *Reader) !void {
     self.n_imports = len;
     // greedy: assume most imports are functions
     var func_types: std.ArrayList(u32) = try .initCapacity(self.allocator, len);
-    errdefer func_types.deinit();
+    errdefer func_types.deinit(self.allocator);
     for (0..len) |_| {
         _ = try r.readName();
         _ = try r.readName();
@@ -180,7 +180,7 @@ pub fn import_section(self: *Module, r: *Reader) !void {
         switch (kind) {
             .func => {
                 const idx = try r.readu();
-                try func_types.append(idx);
+                try func_types.append(self.allocator, idx);
                 self.n_funcs_import += 1;
             },
             .table => {
@@ -197,7 +197,7 @@ pub fn import_section(self: *Module, r: *Reader) !void {
             },
         }
     }
-    self.funcs_imported_types = try func_types.toOwnedSlice();
+    self.funcs_imported_types = try func_types.toOwnedSlice(self.allocator);
 
     // if (dbg == severe) try self.dbg_imports();
 }
@@ -589,8 +589,8 @@ pub fn dump_counts(self: *Module, flags: []const u8) !void {
             return a.count > b.count;
         }
     };
-    var loop_list = std.ArrayList(Block).init(self.allocator);
-    defer loop_list.deinit();
+    var loop_list: std.ArrayList(Block) = .empty;
+    defer loop_list.deinit(self.allocator);
 
     if (all or flag(flags, 'l') or flag(flags, 'w') or flag(flags, 'W')) {
         for (self.funcs_internal, 0..) |*i, fi| {
@@ -600,7 +600,7 @@ pub fn dump_counts(self: *Module, flags: []const u8) !void {
                     if (inst == .loop) {
                         if ((all or flag(flags, 'l') or flag(flags, 'W')) and ci.count > 0) {
                             const string = try std.fmt.allocPrint(big_arena.allocator(), "{} : {}:{} {s} \n", .{ ci.count, fo + fi, cidx, i.name orelse "???" });
-                            try loop_list.append(.{ .count = ci.count, .str = string, .func = i, .blk = @intCast(cidx) });
+                            try loop_list.append(self.allocator, .{ .count = ci.count, .str = string, .func = i, .blk = @intCast(cidx) });
                         }
                     }
                 }

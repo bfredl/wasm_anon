@@ -20,12 +20,12 @@
             .lazy = true,
         },
         .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap#50be7bc7bfe5470bb90bb7c868b88f98078865a6",
-            .hash = "clap-0.10.0-oBajB43oAQCJM-H_eIjWNJAgFd1cFubnaVud5YS-t3f-",
+            .url = "git+https://github.com/Hejsil/zig-clap#a05e82841740fbc3a79474aa88b107d86392f948",
+            .hash = "clap-0.10.0-oBajB_TnAQB0l5UdW9WYhhJDEswbedvwFOzzZwGknYeR",
         },
         .forklift = .{
-            .url = "git+https://github.com/bfredl/forklift#11a980f8f41af6cb7101c032e1781086037b2842",
-            .hash = "forklift-0.0.0-Dkn_kQekAwCVsGw6w8hW2OH5h7bzHUo9RbDdT9GR-X6s",
+            .url = "git+https://github.com/bfredl/forklift#f9c6762199186d675b8c7e84efb7f175535074c9",
+            .hash = "forklift-0.0.0-Dkn_keamAwA8arwgooZJP7TDR5HPZq4ckYmmedl_P6bQ",
         },
     },
     .paths = .{

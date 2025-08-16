@@ -122,7 +122,7 @@ pub fn globalExceptionHandler() void {
 fn build_longjmp(self: *HeavyMachineTool) !void {
     self.longjmp_func = @intCast(self.mod.objs.items.len);
     const longjmp_target = self.mod.code.get_target();
-    try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = longjmp_target } }, .name = null });
+    try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = longjmp_target } }, .name = null });
 
     var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
     try cfo.mov(true, .rax, .rdi); // status = arg1
@@ -198,11 +198,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
-    var value_stack: std.ArrayList(u16) = .init(in.mod.allocator);
-    defer value_stack.deinit();
+    var value_stack: std.ArrayList(u16) = .empty;
+    defer value_stack.deinit(gpa);
 
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, loop: bool, res_var: u16 }) = .init(in.mod.allocator);
-    defer label_stack.deinit();
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, loop: bool, res_var: u16 }) = .empty;
+    defer label_stack.deinit(gpa);
 
     errdefer ir.debug_print(); // show what we got when it ends
 
@@ -226,7 +226,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
             .i32_const => {
                 const val = try r.readLeb(i32);
-                try value_stack.append(try ir.const_uint(@bitCast(@as(i64, val))));
+                try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val))));
             },
             .local_set => {
                 const idx = try r.readu();
@@ -241,7 +241,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .local_get => {
                 const idx = try r.readu();
                 const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
-                try value_stack.append(val);
+                try value_stack.append(gpa, val);
             },
             .loop => {
                 const typ = try r.blocktype();
@@ -250,7 +250,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
-                try label_stack.append(.{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef });
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef });
             },
             .block => {
                 const typ = try r.blocktype();
@@ -261,7 +261,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // technically just a single phi. but FLIR.variable() is meant to be cheap enough to not nead
                 // a separate API for "gimmie one phi".
                 const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
-                try label_stack.append(.{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var });
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var });
             },
             .end => {
                 if (label_stack.pop()) |label| {
@@ -311,7 +311,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     cond_pending = true;
                 } else {
                     const res = try ir.icmpset(node, .dword, .eq, val, zero);
-                    try value_stack.append(res);
+                    try value_stack.append(gpa, res);
                 }
             },
             // TODO: this leads to some bloat - some things like binops could be done as a bulk
@@ -337,7 +337,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             else => .dword,
                         };
                         const res = try ir.iunop(node, size, flir_op, src);
-                        try value_stack.append(res);
+                        try value_stack.append(gpa, res);
                     },
                     .i32_binop => {
                         const rhs = value_stack.pop().?;
@@ -364,7 +364,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             },
                         };
                         const res = try ir.ibinop(node, .dword, flir_op, lhs, rhs);
-                        try value_stack.append(res);
+                        try value_stack.append(gpa, res);
                     },
                     .i32_relop => {
                         const rhs = value_stack.pop().?;
@@ -390,7 +390,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             cond_pending = true;
                         } else {
                             const res = try ir.icmpset(node, .dword, cmpop, lhs, rhs);
-                            try value_stack.append(res);
+                            try value_stack.append(gpa, res);
                         }
                     },
                     else => |cat| {
@@ -411,7 +411,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     // TODO: abstraction
     const target = try forklift.codegen_x86_64(ir, &self.mod.code, false);
     f.hmt_object = @intCast(self.mod.objs.items.len);
-    try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
+    try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
 
     if (f.exported == null) return;
 
@@ -480,5 +480,5 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try cfo.ret();
 
     f.hmt_trampoline = @intCast(self.mod.objs.items.len);
-    try self.mod.objs.append(.{ .obj = .{ .func = .{ .code_start = trampolin_target } }, .name = null });
+    try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = trampolin_target } }, .name = null });
 }
