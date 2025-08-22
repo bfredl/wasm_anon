@@ -153,7 +153,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     _ = id;
     const ir = &self.flir;
     const gpa = in.mod.allocator;
-    _ = try f.ensure_parsed(in.mod);
+    const c = try f.ensure_parsed(in.mod);
     ir.reinit();
     var locals = try gpa.alloc(u16, f.local_types.len);
     var node = try ir.addNode();
@@ -201,7 +201,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var value_stack: std.ArrayList(u16) = .empty;
     defer value_stack.deinit(gpa);
 
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, loop: bool, res_var: u16 }) = .empty;
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16 }) = .empty;
     defer label_stack.deinit(gpa);
 
     errdefer ir.debug_print(); // show what we got when it ends
@@ -218,7 +218,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var cond_pending = false;
 
     while (true) {
-        // const pos = r.pos;
+        const pos = r.pos;
         const inst = try r.readOpCode();
         switch (inst) {
             .drop => {
@@ -257,13 +257,60 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const n_args, const n_results = try typ.arity(in.mod);
                 if (n_args > 0 or n_results > 1) return error.NotImplemented;
                 c_ip += 1;
+                if (c[c_ip].off != pos) @panic("MANIC FEAR");
                 const exit = try ir.addNode();
                 // technically just a single phi. but FLIR.variable() is meant to be cheap enough to not nead
                 // a separate API for "gimmie one phi".
                 const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var });
             },
+            .if_ => {
+                const typ = try r.blocktype();
+                const n_args, const n_results = try typ.arity(in.mod);
+                if (n_args > 0 or n_results > 1) return error.NotImplemented;
+
+                // note: semi-copy in .br_if
+                if (!cond_pending) {
+                    const val = value_stack.pop().?;
+                    _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
+                } else cond_pending = false;
+
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("TREMBLING FEAR");
+
+                var r_target = in.mod.reader_at(c[c[c_ip].jmp_t].off);
+                const c_inst = try r_target.readOpCode();
+
+                const then = try ir.addNode();
+                const exit = try ir.addNode();
+                std.debug.print("INSTRUCTIVE FEAR: {}\n", .{c_inst});
+                const else_ = if (c_inst == .else_) try ir.addNode() else exit;
+
+                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .else_target = else_, .loop = false, .res_var = res_var });
+
+                try ir.addLink(node, 0, else_);
+                try ir.addLink(node, 1, then); // branch taken
+                node = then;
+            },
+            .else_ => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("FEAR OF DESICIONS");
+                if (label_stack.items.len == 0) @panic("WAVES OF FEAR");
+                // reuse same label in the else body
+                const label = label_stack.items[label_stack.items.len - 1];
+
+                const has_res = label.res_var != FLIR.NoRef;
+                if (has_res) {
+                    try ir.putvar(node, label.res_var, value_stack.pop().?);
+                }
+                try ir.addLink(node, 0, label.ir_target);
+
+                node = label.else_target;
+            },
             .end => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("UNSEEN FEAR");
                 if (label_stack.pop()) |label| {
                     if (!label.loop) {
                         const has_res = label.res_var != FLIR.NoRef;
@@ -285,6 +332,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
             },
             .br_if => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
                 if (!cond_pending) {
                     const val = value_stack.pop().?;
                     _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
@@ -306,7 +355,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
                 // NB: semi-copy in i32_relop
                 const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                if (peekinst == .br_if) {
+                if (peekinst == .br_if or peekinst == .if_) {
                     _ = try ir.icmp(node, .dword, .eq, val, zero);
                     cond_pending = true;
                 } else {
@@ -385,7 +434,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
                         const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
                         // NB: semi-copy in i32_eqz
-                        if (peekinst == .br_if) {
+                        if (peekinst == .br_if or peekinst == .if_) {
                             _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
                             cond_pending = true;
                         } else {
