@@ -175,7 +175,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var value_stack: std.ArrayList(u16) = .empty;
     defer value_stack.deinit(gpa);
 
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16 }) = .empty;
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16, value_stack_level: usize }) = .empty;
     defer label_stack.deinit(gpa);
 
     // only a single node doing "ir.ret"
@@ -184,7 +184,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const exit_var = try ir.variable(.{ .intptr = .dword });
     // TODO: ir.ret(VOID)
     try ir.ret(exit_node, .{ .intptr = .dword }, if (f.n_res > 0) exit_var else try ir.const_uint(0));
-    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef });
+    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef, .value_stack_level = 0 });
 
     var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
@@ -207,16 +207,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     errdefer ir.debug_print(); // show what we got when it ends
 
-    errdefer {
+    if (true) {
         if (f.name) |nam| {
-            std.debug.print("FOR \"{s}\":", .{nam});
+            std.debug.print("FOR \"{s}\":\n", .{nam});
         } else if (f.exported) |nam| {
-            std.debug.print("FOR export \"{s}\":", .{nam});
+            std.debug.print("FOR export \"{s}\":\n", .{nam});
         }
     }
 
     // if true, br and br_if should use a icmp/fcmp/etc already emitted
     var cond_pending = false;
+    var dead_end = false;
 
     while (true) {
         const pos = r.pos;
@@ -251,7 +252,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
-                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef });
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef, .value_stack_level = value_stack.items.len });
             },
             .block => {
                 const typ = try r.blocktype();
@@ -263,7 +264,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // technically just a single phi. but FLIR.variable() is meant to be cheap enough to not nead
                 // a separate API for "gimmie one phi".
                 const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
-                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var });
+                // TODO: with n_args, value_stack_level is without the args
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
             },
             .if_ => {
                 const typ = try r.blocktype();
@@ -288,7 +290,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const else_ = if (c_inst == .else_) try ir.addNode() else exit;
 
                 const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
-                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .else_target = else_, .loop = false, .res_var = res_var });
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .else_target = else_, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
 
                 try ir.addLink(node, 0, else_);
                 try ir.addLink(node, 1, then); // branch taken
@@ -313,25 +315,33 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 if (c[c_ip].off != pos) @panic("UNSEEN FEAR");
                 const label = label_stack.pop() orelse @panic("FEAR OF LIMBO");
-                if (label.c_ip > 0) {
-                    if (!label.loop) {
-                        const has_res = label.res_var != FLIR.NoRef;
-                        const tip = if (has_res) &value_stack.items[value_stack.items.len - 1] else undefined;
-                        if (has_res) try ir.putvar(node, label.res_var, tip.*);
+                const has_res = label.res_var != FLIR.NoRef;
+                if (!label.loop) {
+                    if (!dead_end) {
+                        if (has_res) {
+                            try ir.putvar(node, label.res_var, value_stack.pop().?);
+                        }
                         try ir.addLink(node, 0, label.ir_target);
-                        node = label.ir_target;
-                        // if this was the only exit it will be simplified back to the old value of tip.*
-                        if (has_res) tip.* = try ir.read_ref(node, label.res_var);
+                    } else {
+                        if (value_stack.items.len < label.value_stack_level) return error.InternalCompilerError;
+                        value_stack.items.len = label.value_stack_level;
                     }
+                    node = label.ir_target;
+                    dead_end = false; // back to lyf
                 } else {
-                    // TODO: this was written b4 function exit became a label, partial merge with above?
-                    if (value_stack.items.len != f.n_res) return error.InternalCompilerError;
-                    if (f.n_res > 0) {
-                        if (f.n_res > 1) return error.Notimplemented;
-                        try ir.putvar(node, exit_var, value_stack.items[0]);
+                    if (dead_end) {
+                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                        // dead code just right after a loop, bleh!
+                        if (peekinst != .end) return error.NotImplemented;
                     }
-                    try ir.addLink(node, 0, exit_node);
+                }
+
+                if (label_stack.items.len == 0) {
+                    if (value_stack.items.len != 0) return error.InternalCompilerError;
                     break;
+                } else {
+                    // if this was the only exit it will be simplified back to the old tip value
+                    if (has_res) try value_stack.append(gpa, try ir.read_ref(node, label.res_var));
                 }
             },
             .br_if => {
@@ -351,6 +361,18 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
                 try ir.addLink(node, 1, target.ir_target); // branch taken
                 node = try ir.addNodeAfter(node);
+            },
+            .ret => {
+                try ir.addLink(node, 0, exit_node);
+                if (f.n_res > 0) {
+                    if (f.n_res > 1) return error.Notimplemented;
+                    try ir.putvar(node, exit_var, value_stack.pop().?);
+                }
+                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                // TODO: dead code is weird in WASM, need to skip over as the stack might not exist
+                // TODO: or else I guess
+                if (peekinst != .end) return error.NotImplemented;
+                dead_end = true;
             },
             .i32_eqz => {
                 const val = value_stack.pop().?;
