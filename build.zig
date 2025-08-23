@@ -106,33 +106,33 @@ pub fn build(b: *std.Build) void {
     const run_spec_tests = b.step("spectest", "Run spec tests");
 
     if (maybe_spec_dep) |spec_dep| {
-        const upstream_specs = [_]struct { []const u8, u32, bool }{
-            .{ "i32", 0, true },
-            .{ "i64", 0, false },
-            .{ "f32", 2, false },
-            .{ "f64", 2, false },
-            .{ "f32_cmp", 0, false },
-            .{ "f64_cmp", 0, false },
-            .{ "labels", 0, false },
-            .{ "local_get", 0, false },
-            .{ "local_set", 0, false },
-            .{ "local_tee", 0, false },
-            .{ "br_if", 0, false },
-            // .{ "loop", 0, false },
-            .{ "conversions", 6, false },
-            .{ "memory", 0, false },
-            .{ "memory_copy", 0, false },
-            .{ "memory_fill", 0, false },
-            .{ "load", 0, false },
-            .{ "store", 0, false },
-            .{ "call", 2, false },
-            .{ "global", 0, false },
+        const upstream_specs = [_]struct { []const u8, u32, ?u32 }{
+            .{ "i32", 0, 1 },
+            .{ "i64", 0, null },
+            .{ "f32", 2, null },
+            .{ "f64", 2, null },
+            .{ "f32_cmp", 0, null },
+            .{ "f64_cmp", 0, null },
+            .{ "labels", 0, null },
+            .{ "local_get", 0, null },
+            .{ "local_set", 0, null },
+            .{ "local_tee", 0, null },
+            .{ "br_if", 0, null },
+            // .{ "loop", 0, null },
+            .{ "conversions", 6, null },
+            .{ "memory", 0, null },
+            .{ "memory_copy", 0, null },
+            .{ "memory_fill", 0, null },
+            .{ "load", 0, null },
+            .{ "store", 0, null },
+            .{ "call", 2, null },
+            .{ "global", 0, null },
         };
         for (upstream_specs) |item| {
             const name, const fail, const heavy = item;
             add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, fail, false);
-            if (heavy) { // if heavy also run non-heavy
-                add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, fail, true);
+            if (heavy) |heavy_fail| { // if heavy also run non-heavy
+                add_spectest(b, run_spec_tests, wast_exe, spec_dep.path(b.fmt("test/core/{s}.wast", .{name})), name, heavy_fail, true);
             }
         }
     }
