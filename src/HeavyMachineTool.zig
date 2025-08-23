@@ -172,12 +172,19 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
+    var value_stack: std.ArrayList(u16) = .empty;
+    defer value_stack.deinit(gpa);
+
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16 }) = .empty;
+    defer label_stack.deinit(gpa);
+
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
     if (f.n_res > 1) return error.NotImplemented;
     const exit_var = try ir.variable(.{ .intptr = .dword });
     // TODO: ir.ret(VOID)
     try ir.ret(exit_node, .{ .intptr = .dword }, if (f.n_res > 0) exit_var else try ir.const_uint(0));
+    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef });
 
     var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
@@ -197,12 +204,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             }
         }
     }
-
-    var value_stack: std.ArrayList(u16) = .empty;
-    defer value_stack.deinit(gpa);
-
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16 }) = .empty;
-    defer label_stack.deinit(gpa);
 
     errdefer ir.debug_print(); // show what we got when it ends
 
@@ -311,7 +312,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .end => {
                 c_ip += 1;
                 if (c[c_ip].off != pos) @panic("UNSEEN FEAR");
-                if (label_stack.pop()) |label| {
+                const label = label_stack.pop() orelse @panic("FEAR OF LIMBO");
+                if (label.c_ip > 0) {
                     if (!label.loop) {
                         const has_res = label.res_var != FLIR.NoRef;
                         const tip = if (has_res) &value_stack.items[value_stack.items.len - 1] else undefined;
@@ -322,6 +324,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         if (has_res) tip.* = try ir.read_ref(node, label.res_var);
                     }
                 } else {
+                    // TODO: this was written b4 function exit became a label, partial merge with above?
                     if (value_stack.items.len != f.n_res) return error.InternalCompilerError;
                     if (f.n_res > 0) {
                         if (f.n_res > 1) return error.Notimplemented;
@@ -362,6 +365,18 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     const res = try ir.icmpset(node, .dword, .eq, val, zero);
                     try value_stack.append(gpa, res);
                 }
+            },
+            .call => {
+                const idx = try r.readu();
+                if (idx < in.mod.n_funcs_import) return error.NotImplemented;
+                if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
+                const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
+                if (func.n_params > 0 or func.n_res > 0) return error.NotImplemented;
+                const obj = func.hmt_object orelse return error.NotImplemented;
+
+                const off = self.mod.get_func_off(obj) orelse return error.TypeError;
+                const callwhat = try ir.const_uint(off);
+                _ = try ir.call(node, .near, callwhat, 0);
             },
             // TODO: this leads to some bloat - some things like binops could be done as a bulk
             inline else => |tag| {
