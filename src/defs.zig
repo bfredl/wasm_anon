@@ -299,6 +299,19 @@ pub const BinOp = enum(u8) {
     rotr,
 };
 
+pub const RelOp = enum(u8) {
+    eq,
+    ne,
+    lt_s,
+    lt_u,
+    gt_s,
+    gt_u,
+    le_s,
+    le_u,
+    ge_s,
+    ge_u,
+};
+
 pub fn memtype(comptime op: OpCode) type {
     return switch (op) {
         .i32_load => i32,

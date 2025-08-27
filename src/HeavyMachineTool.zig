@@ -111,6 +111,12 @@ inline fn unwide(inst: defs.OpCode, wide: bool, narrow_start: defs.OpCode, wide_
     return @intFromEnum(inst) - @intFromEnum(@as(defs.OpCode, if (wide) wide_start else narrow_start));
 }
 
+fn iSize(wide: bool) forklift.defs.ISize {
+    // a little weak. just like wasm, QBE does, forklift cares about wide vs non-wide for ops
+    // 1,2,4 vs 8 bytes enter the picture when memory:p
+    return if (wide) .quadword else .dword;
+}
+
 pub fn globalExceptionHandler() void {
     const posix = std.posix;
     var act = posix.Sigaction{
@@ -387,17 +393,18 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (peekinst != .end) return error.NotImplemented;
                 dead_end = true;
             },
-            .i32_eqz => {
+            .i32_eqz, .i64_eqz => {
                 const val = value_stack.pop().?;
                 const zero = try ir.const_uint(0);
+                const wide = (inst == .i64_eqz);
 
                 // NB: semi-copy in i32_relop
                 const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
                 if (peekinst == .br_if or peekinst == .if_) {
-                    _ = try ir.icmp(node, .dword, .eq, val, zero);
+                    _ = try ir.icmp(node, iSize(wide), .eq, val, zero);
                     cond_pending = true;
                 } else {
-                    const res = try ir.icmpset(node, .dword, .eq, val, zero);
+                    const res = try ir.icmpset(node, iSize(wide), .eq, val, zero);
                     try value_stack.append(gpa, res);
                 }
             },
@@ -417,23 +424,28 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 switch (category) {
-                    .i32_unop => {
+                    .i32_unop, .i64_unop => {
                         const src = value_stack.pop().?;
                         const flir_op: FLIR.IntUnOp = switch (tag) {
-                            .i32_popcnt => .popcount,
-                            .i32_ctz => .ctz,
-                            .i32_clz => .clz,
+                            .i32_popcnt, .i64_popcnt => .popcount,
+                            .i32_ctz, .i64_ctz => .ctz,
+                            .i32_clz, .i64_clz => .clz,
                             .i32_extend8_s => .sign_extend,
                             .i32_extend16_s => .sign_extend,
+                            .i64_extend8_s => .sign_extend,
+                            .i64_extend16_s => .sign_extend,
+                            .i64_extend32_s => .sign_extend,
                             else => {
                                 f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
                             },
                         };
+                        // TODO: wrongggg for sign_extend
                         const size: forklift.defs.ISize = switch (tag) {
                             .i32_extend8_s => .byte,
                             .i32_extend16_s => .word,
-                            else => .dword,
+                            .i64_extend8_s, .i64_extend16_s, .i64_extend32_s => return error.NotImplemented,
+                            else => iSize(category == .i64_unop),
                         };
                         const res = try ir.iunop(node, size, flir_op, src);
                         try value_stack.append(gpa, res);
@@ -461,33 +473,34 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .rotl => .rotl,
                             .rotr => .rotr,
                         };
-                        const res = try ir.ibinop(node, if (wide) .quadword else .dword, flir_op, lhs, rhs);
+                        const res = try ir.ibinop(node, iSize(wide), flir_op, lhs, rhs);
                         try value_stack.append(gpa, res);
                     },
-                    .i32_relop => {
+                    .i32_relop, .i64_relop => {
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;
-                        const cmpop: FLIR.IntCond = switch (tag) {
-                            .i32_ne => .neq,
-                            .i32_eq => .eq,
-                            .i32_lt_s => .lt,
-                            .i32_le_s => .le,
-                            .i32_gt_s => .gt,
-                            .i32_ge_s => .ge,
-                            .i32_lt_u => .b,
-                            .i32_le_u => .na,
-                            .i32_gt_u => .a,
-                            .i32_ge_u => .nb,
-                            else => @compileError(@tagName(tag)),
+                        const wide = category == .i64_relop;
+                        const tag_op: defs.RelOp = @enumFromInt(unwide(inst, wide, .i32_eq, .i64_eq));
+                        const cmpop: FLIR.IntCond = switch (tag_op) {
+                            .eq => .eq,
+                            .ne => .neq,
+                            .lt_s => .lt,
+                            .le_s => .le,
+                            .gt_s => .gt,
+                            .ge_s => .ge,
+                            .lt_u => .b,
+                            .le_u => .na,
+                            .gt_u => .a,
+                            .ge_u => .nb,
                         };
 
                         const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
                         // NB: semi-copy in i32_eqz
                         if (peekinst == .br_if or peekinst == .if_) {
-                            _ = try ir.icmp(node, .dword, cmpop, lhs, rhs);
+                            _ = try ir.icmp(node, iSize(wide), cmpop, lhs, rhs);
                             cond_pending = true;
                         } else {
-                            const res = try ir.icmpset(node, .dword, cmpop, lhs, rhs);
+                            const res = try ir.icmpset(node, iSize(wide), cmpop, lhs, rhs);
                             try value_stack.append(gpa, res);
                         }
                     },
