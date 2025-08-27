@@ -99,12 +99,16 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
     return func.n_res;
 }
 
-fn wide(typ: defs.ValType) !bool {
+fn is_wide(typ: defs.ValType) !bool {
     return switch (typ) {
         .i32 => false,
         .i64 => true,
         else => error.NotImplemented,
     };
+}
+
+inline fn unwide(inst: defs.OpCode, wide: bool, narrow_start: defs.OpCode, wide_start: defs.OpCode) u8 {
+    return @intFromEnum(inst) - @intFromEnum(@as(defs.OpCode, if (wide) wide_start else narrow_start));
 }
 
 pub fn globalExceptionHandler() void {
@@ -166,7 +170,12 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             const mut = (f.args_mut & (@as(u64, 1) << @as(u6, @intCast((i & 63))))) != 0;
             if (mut) {
                 const src = locals[i];
-                locals[i] = try ir.variable(.{ .intptr = .dword });
+                const typ: forklift.defs.ISize = switch (f.local_types[i]) {
+                    .i32 => .dword,
+                    .i64 => .quadword,
+                    else => return error.NotImplemented,
+                };
+                locals[i] = try ir.variable(.{ .intptr = typ });
                 try ir.putvar(node, locals[i], src);
             }
         }
@@ -196,9 +205,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             const n_decl = try r.readu();
             const typ: defs.ValType = @enumFromInt(try r.readByte());
             const init_val = StackValue.default(typ) orelse return error.InvalidFormat;
-            if (typ != .i32) return error.NotImplemented;
+            const ftyp: forklift.defs.ISize = switch (typ) {
+                .i32 => .dword,
+                .i64 => .quadword,
+                else => return error.NotImplemented,
+            };
             for (0..n_decl) |_| {
-                locals[i] = try ir.variable(.{ .intptr = .dword });
+                locals[i] = try ir.variable(.{ .intptr = ftyp });
                 try ir.putvar(node, locals[i], try ir.const_uint(init_val.u32()));
                 i += 1;
             }
@@ -425,31 +438,30 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         const res = try ir.iunop(node, size, flir_op, src);
                         try value_stack.append(gpa, res);
                     },
-                    .i32_binop => {
+                    .i32_binop, .i64_binop => {
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;
-                        const flir_op: FLIR.IntBinOp = switch (tag) {
-                            .i32_add => .add,
-                            .i32_sub => .sub,
-                            .i32_mul => .mul,
-                            .i32_div_s => .sdiv,
-                            .i32_div_u => .udiv,
-                            .i32_rem_s => .srem,
-                            .i32_rem_u => .urem,
-                            .i32_and => .@"and",
-                            .i32_or => .@"or",
-                            .i32_xor => .xor,
-                            .i32_shl => .shl,
-                            .i32_shr_s => .sar,
-                            .i32_shr_u => .shr,
-                            .i32_rotl => .rotl,
-                            .i32_rotr => .rotr,
-                            else => {
-                                f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
-                                return error.NotImplemented;
-                            },
+                        const wide = category == .i64_binop;
+                        // still bloated but preparing for category-wise debloat
+                        const tag_reduced: defs.BinOp = @enumFromInt(unwide(inst, wide, .i32_add, .i64_add));
+                        const flir_op: FLIR.IntBinOp = switch (tag_reduced) {
+                            .add => .add,
+                            .sub => .sub,
+                            .mul => .mul,
+                            .div_s => .sdiv,
+                            .div_u => .udiv,
+                            .rem_s => .srem,
+                            .rem_u => .urem,
+                            .@"and" => .@"and",
+                            .@"or" => .@"or",
+                            .xor => .xor,
+                            .shl => .shl,
+                            .shr_s => .sar,
+                            .shr_u => .shr,
+                            .rotl => .rotl,
+                            .rotr => .rotr,
                         };
-                        const res = try ir.ibinop(node, .dword, flir_op, lhs, rhs);
+                        const res = try ir.ibinop(node, if (wide) .quadword else .dword, flir_op, lhs, rhs);
                         try value_stack.append(gpa, res);
                     },
                     .i32_relop => {

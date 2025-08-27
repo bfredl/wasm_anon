@@ -108,7 +108,7 @@ pub fn build(b: *std.Build) void {
     if (maybe_spec_dep) |spec_dep| {
         const upstream_specs = [_]struct { []const u8, u32, ?u32 }{
             .{ "i32", 0, 1 },
-            .{ "i64", 0, null },
+            .{ "i64", 0, 0 },
             .{ "f32", 2, null },
             .{ "f64", 2, null },
             .{ "f32_cmp", 0, null },
@@ -117,7 +117,7 @@ pub fn build(b: *std.Build) void {
             .{ "local_get", 0, null },
             .{ "local_set", 0, null },
             .{ "local_tee", 0, null },
-            .{ "br_if", 0, null },
+            .{ "br_if", 0, 39 },
             // .{ "loop", 0, null },
             .{ "conversions", 6, null },
             .{ "memory", 0, null },

@@ -281,6 +281,24 @@ pub const OpCode = enum(u8) {
     prefixed = 0xFC,
 };
 
+pub const BinOp = enum(u8) {
+    add,
+    sub,
+    mul,
+    div_s,
+    div_u,
+    rem_s,
+    rem_u,
+    @"and",
+    @"or",
+    xor,
+    shl,
+    shr_s,
+    shr_u,
+    rotl,
+    rotr,
+};
+
 pub fn memtype(comptime op: OpCode) type {
     return switch (op) {
         .i32_load => i32,
